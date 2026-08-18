@@ -112,6 +112,18 @@ export const toolDefinitions: ModelToolDefinition[] = [
   {
     type: 'function',
     function: {
+      name: 'workspace_stats',
+      description: 'Show workspace size and file-count quota. Use this before writing large files.',
+      parameters: {
+        type: 'object',
+        properties: {},
+        additionalProperties: false,
+      },
+    },
+  },
+  {
+    type: 'function',
+    function: {
       name: 'workspace_diff',
       description: 'Show line changes between the current file and a saved revision.',
       parameters: {
@@ -157,6 +169,7 @@ export async function executeTool(call: ToolCallRequest, context: ToolContext): 
       case 'workspace_write': return await workspaceWrite(args, context)
       case 'workspace_edit': return await workspaceEdit(args, context)
       case 'workspace_grep': return await workspaceGrep(args, context)
+      case 'workspace_stats': return await workspaceStats(context)
       case 'workspace_diff': return await workspaceDiff(args, context)
       case 'web_search': return await webSearch(args, context)
       default: return failure(`Unknown tool: ${call.function.name}`)
@@ -209,24 +222,19 @@ async function workspaceGrep(args: Record<string, unknown>, context: ToolContext
   const useRegex = args.useRegex === true
   const caseSensitive = args.caseSensitive === true
   const maxResults = Math.min(100, Math.max(1, numberArg(args.maxResults, 50)))
-  let matcher: RegExp
-  try {
-    matcher = new RegExp(useRegex ? pattern : escapeRegExp(pattern), caseSensitive ? 'g' : 'gi')
-  } catch (error) {
-    return failure(`Invalid search pattern: ${error instanceof Error ? error.message : String(error)}`)
-  }
   const pathFilter = typeof args.path === 'string' ? args.path.replaceAll('\\', '/') : ''
-  const matches: Array<{ path: string; line: number; text: string }> = []
-  for (const file of await context.repository.listFiles(context.workspaceId)) {
-    if (pathFilter && !file.path.startsWith(pathFilter)) continue
-    const lines = file.content.split('\n')
-    lines.forEach((text, index) => {
-      matcher.lastIndex = 0
-      if (matcher.test(text) && matches.length < maxResults) matches.push({ path: file.path, line: index + 1, text: text.trim().slice(0, 400) })
-    })
-    if (matches.length >= maxResults) break
+  try {
+    const result = await context.repository.grepWorkspace(context.workspaceId, { pattern, useRegex, caseSensitive, maxResults, pathFilter })
+    if (result.error) return failure(result.error)
+    return success(JSON.stringify({ pattern, matches: result.matches, truncated: result.truncated, elapsedMs: result.elapsedMs }, null, 2), result.matches)
+  } catch (error) {
+    return failure(`Search worker failed: ${error instanceof Error ? error.message : String(error)}`)
   }
-  return success(JSON.stringify({ pattern, matches, truncated: matches.length >= maxResults }, null, 2), matches)
+}
+
+async function workspaceStats(context: ToolContext): Promise<ToolExecutionResult> {
+  const stats = await context.repository.getWorkspaceStats(context.workspaceId)
+  return success(JSON.stringify(stats, null, 2), stats)
 }
 
 async function workspaceDiff(args: Record<string, unknown>, context: ToolContext): Promise<ToolExecutionResult> {
@@ -293,12 +301,7 @@ function numberArg(value: unknown, fallback: number): number {
   return typeof value === 'number' && Number.isFinite(value) ? Math.floor(value) : fallback
 }
 
-function escapeRegExp(value: string): string {
-  return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
-}
-
-function success(content: string, data?: unknown, changedPath?: string): ToolExecutionResult {
-  return { ok: true, content: cap(content), data, changedPath }
+function success(content: string, data?: unknown, changedPath?: string): ToolExecutionResult {  return { ok: true, content: cap(content), data, changedPath }
 }
 
 function failure(error: string): ToolExecutionResult {

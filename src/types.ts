@@ -33,6 +33,7 @@ export interface SessionRecord {
   createdAt: number
   updatedAt: number
   modelId: string
+  archivedAt?: number
 }
 
 export type MessageRole = 'system' | 'user' | 'assistant' | 'tool'
@@ -60,6 +61,7 @@ export interface AgentEventRecord {
     | 'tool_result'
     | 'workspace_mutation'
     | 'preview_diagnostic'
+    | 'review_result'
     | 'turn_end'
     | 'error'
   createdAt: number
@@ -70,6 +72,7 @@ export interface AgentSettings {
   apiBaseUrl: string
   apiKey: string
   model: string
+  customHeaders: string
   demoMode: boolean
   searchProvider: 'duckduckgo' | 'custom' | 'disabled'
   searchEndpoint: string
@@ -78,6 +81,7 @@ export interface AgentSettings {
   reviewResponses: boolean
   maxSteps: number
   maxToolCalls: number
+  maxRepairRounds: number
 }
 
 export interface SearchResultItem {
@@ -124,10 +128,22 @@ export interface ModelMessage {
   tool_calls?: ToolCallRequest[]
 }
 
+export type ModelChunk =
+  | { kind: 'text'; text: string }
+  | { kind: 'tool_call'; call: ToolCallRequest }
+  | { kind: 'done'; finishReason?: string; usage?: ModelResponse['usage'] }
+  | { kind: 'error'; message: string }
+
 export interface ModelResponse {
   id?: string
   content: string
   toolCalls: ToolCallRequest[]
   finishReason?: string
   usage?: { prompt_tokens?: number; completion_tokens?: number; total_tokens?: number }
+}
+
+export interface ConnectionTestResult {
+  ok: boolean
+  message: string
+  model?: string
 }

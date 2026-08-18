@@ -14,6 +14,7 @@ const DEFAULT_SETTINGS: AgentSettings = {
   apiBaseUrl: 'https://api.deepseek.com/v1',
   apiKey: '',
   model: 'deepseek-chat',
+  customHeaders: '',
   demoMode: true,
   searchProvider: 'disabled',
   searchEndpoint: '',
@@ -22,6 +23,7 @@ const DEFAULT_SETTINGS: AgentSettings = {
   reviewResponses: true,
   maxSteps: 8,
   maxToolCalls: 24,
+  maxRepairRounds: 1,
 }
 
 export class RevisionConflictError extends Error {
@@ -36,6 +38,44 @@ export class WorkspacePolicyError extends Error {
     super(message)
     this.name = 'WorkspacePolicyError'
   }
+}
+
+export interface GrepQuery {
+  pattern: string
+  useRegex: boolean
+  caseSensitive: boolean
+  maxResults: number
+  pathFilter: string
+}
+
+export interface GrepResult {
+  matches: Array<{ path: string; line: number; text: string }>
+  truncated: boolean
+  error?: string
+  elapsedMs: number
+}
+
+export interface WorkspaceStats {
+  files: number
+  totalBytes: number
+  fileLimit: number
+  byteLimit: number
+}
+
+let grepWorker: Worker | null = null
+let grepToken = 0
+let grepWaiters: Array<{ resolve: (value: GrepResult) => void }> = []
+
+function getGrepWorker(): Worker {
+  if (grepWorker) return grepWorker
+  grepWorker = new Worker(new URL('./search-worker.ts', import.meta.url), { type: 'module' })
+  grepWorker.onmessage = (event: MessageEvent<{ type: 'result'; result?: GrepResult; error?: string }>) => {
+    const waiter = grepWaiters.shift()
+    if (!waiter) return
+    const { result, error } = event.data
+    waiter.resolve(error ? { matches: [], truncated: false, error, elapsedMs: 0 } : result ?? { matches: [], truncated: false, elapsedMs: 0 })
+  }
+  return grepWorker
 }
 
 function createId(prefix: string): string {
@@ -101,31 +141,35 @@ export class BrowserRepository {
   async getSettings(): Promise<AgentSettings> {
     const db = await this.db
     const tx = db.transaction('settings', 'readonly')
+    const done = transactionDone(tx)
     const stored = await request(tx.objectStore('settings').get('default')) as AgentSettings | undefined
-    await transactionDone(tx)
+    await done
     return { ...DEFAULT_SETTINGS, ...(stored ?? {}) }
   }
 
   async saveSettings(settings: AgentSettings): Promise<void> {
     const db = await this.db
     const tx = db.transaction('settings', 'readwrite')
+    const done = transactionDone(tx)
     tx.objectStore('settings').put({ id: 'default', ...settings })
-    await transactionDone(tx)
+    await done
   }
 
   async listWorkspaces(): Promise<WorkspaceRecord[]> {
     const db = await this.db
     const tx = db.transaction('workspaces', 'readonly')
+    const done = transactionDone(tx)
     const values = await request(tx.objectStore('workspaces').getAll())
-    await transactionDone(tx)
+    await done
     return (values as WorkspaceRecord[]).sort((a, b) => b.updatedAt - a.updatedAt)
   }
 
   async getWorkspace(id: string): Promise<WorkspaceRecord | undefined> {
     const db = await this.db
     const tx = db.transaction('workspaces', 'readonly')
+    const done = transactionDone(tx)
     const value = await request(tx.objectStore('workspaces').get(id)) as WorkspaceRecord | undefined
-    await transactionDone(tx)
+    await done
     return value
   }
 
@@ -150,8 +194,9 @@ export class BrowserRepository {
     }
     const db = await this.db
     const tx = db.transaction('workspaces', 'readwrite')
+    const done = transactionDone(tx)
     tx.objectStore('workspaces').put(workspace)
-    await transactionDone(tx)
+    await done
     return workspace
   }
 
@@ -160,11 +205,23 @@ export class BrowserRepository {
     if (!workspace) return
     const db = await this.db
     const tx = db.transaction('workspaces', 'readwrite')
+    const done = transactionDone(tx)
     tx.objectStore('workspaces').put({ ...workspace, updatedAt: Date.now() })
-    await transactionDone(tx)
+    await done
   }
 
-  async createSession(workspaceId: string, title = 'New conversation'): Promise<SessionRecord> {
+  async setEntryPath(workspaceId: string, path: string): Promise<void> {
+    const workspace = await this.getWorkspace(workspaceId)
+    if (!workspace) return
+    const normalized = requirePath(path)
+    const db = await this.db
+    const tx = db.transaction('workspaces', 'readwrite')
+    const done = transactionDone(tx)
+    tx.objectStore('workspaces').put({ ...workspace, entryPath: normalized, updatedAt: Date.now() })
+    await done
+  }
+
+  async createSession(workspaceId: string, title = '新会话'): Promise<SessionRecord> {
     const now = Date.now()
     const session: SessionRecord = {
       id: createId('session'),
@@ -176,29 +233,41 @@ export class BrowserRepository {
     }
     const db = await this.db
     const tx = db.transaction('sessions', 'readwrite')
+    const done = transactionDone(tx)
     tx.objectStore('sessions').put(session)
-    await transactionDone(tx)
+    await done
     return session
   }
 
   async getOrCreateSession(workspaceId: string): Promise<SessionRecord> {
     const sessions = await this.listSessions(workspaceId)
-    return sessions[0] ?? this.createSession(workspaceId)
+    return sessions.find(session => !session.archivedAt) ?? this.createSession(workspaceId)
+  }
+
+  async getSession(id: string): Promise<SessionRecord | undefined> {
+    const db = await this.db
+    const tx = db.transaction('sessions', 'readonly')
+    const done = transactionDone(tx)
+    const value = await request(tx.objectStore('sessions').get(id)) as SessionRecord | undefined
+    await done
+    return value
   }
 
   async listSessions(workspaceId: string): Promise<SessionRecord[]> {
     const db = await this.db
     const tx = db.transaction('sessions', 'readonly')
+    const done = transactionDone(tx)
     const values = await request(tx.objectStore('sessions').index('workspaceId').getAll(workspaceId))
-    await transactionDone(tx)
+    await done
     return (values as SessionRecord[]).sort((a, b) => b.updatedAt - a.updatedAt)
   }
 
   async listFiles(workspaceId: string): Promise<WorkspaceFile[]> {
     const db = await this.db
     const tx = db.transaction('files', 'readonly')
+    const done = transactionDone(tx)
     const values = await request(tx.objectStore('files').index('workspaceId').getAll(workspaceId))
-    await transactionDone(tx)
+    await done
     return (values as Array<WorkspaceFile & { id: string; workspaceId: string }>).sort((a, b) => a.path.localeCompare(b.path))
   }
 
@@ -206,8 +275,9 @@ export class BrowserRepository {
     const normalized = requirePath(path)
     const db = await this.db
     const tx = db.transaction('files', 'readonly')
+    const done = transactionDone(tx)
     const value = await request(tx.objectStore('files').index('workspacePath').get([workspaceId, normalized])) as (WorkspaceFile & { id: string; workspaceId: string }) | undefined
-    await transactionDone(tx)
+    await done
     return value
   }
 
@@ -231,6 +301,7 @@ export class BrowserRepository {
     }
     const db = await this.db
     const tx = db.transaction(['files', 'revisions'], 'readwrite')
+    const done = transactionDone(tx)
     tx.objectStore('files').put(file)
     tx.objectStore('revisions').put({
       id: createId('revision'),
@@ -241,7 +312,7 @@ export class BrowserRepository {
       content,
       createdAt: now,
     })
-    await transactionDone(tx)
+    await done
     await this.touchWorkspace(workspaceId)
     return file
   }
@@ -259,8 +330,9 @@ export class BrowserRepository {
     const normalized = requirePath(path)
     const db = await this.db
     const tx = db.transaction('files', 'readwrite')
+    const done = transactionDone(tx)
     tx.objectStore('files').delete(`${workspaceId}:${normalized}`)
-    await transactionDone(tx)
+    await done
     await this.touchWorkspace(workspaceId)
   }
 
@@ -268,38 +340,111 @@ export class BrowserRepository {
     const normalized = requirePath(path)
     const db = await this.db
     const tx = db.transaction('revisions', 'readonly')
+    const done = transactionDone(tx)
     const values = await request(tx.objectStore('revisions').index('workspaceId').getAll(workspaceId)) as Array<{ path: string; revision: number; content: string; createdAt: number }>
-    await transactionDone(tx)
+    await done
     return values.filter(value => value.path === normalized).sort((a, b) => b.revision - a.revision)
+  }
+
+  async getWorkspaceStats(workspaceId: string): Promise<WorkspaceStats> {
+    const files = await this.listFiles(workspaceId)
+    return {
+      files: files.length,
+      totalBytes: files.reduce((sum, file) => sum + file.content.length, 0),
+      fileLimit: 1000,
+      byteLimit: 10 * 1024 * 1024,
+    }
+  }
+
+  async deleteWorkspace(workspaceId: string): Promise<void> {
+    const db = await this.db
+    const files = await this.listFiles(workspaceId)
+    const tx = db.transaction(['workspaces', 'files', 'revisions', 'sessions', 'messages', 'events'], 'readwrite')
+    const done = transactionDone(tx)
+    tx.objectStore('workspaces').delete(workspaceId)
+    for (const file of files) tx.objectStore('files').delete(`${workspaceId}:${file.path}`)
+    const revisions = await request(tx.objectStore('revisions').index('workspaceId').getAllKeys(workspaceId))
+    for (const key of revisions) tx.objectStore('revisions').delete(key)
+    const sessions = await request(tx.objectStore('sessions').index('workspaceId').getAllKeys(workspaceId))
+    for (const key of sessions) {
+      const sessionId = String(key)
+      const messages = await request(tx.objectStore('messages').index('sessionId').getAllKeys(sessionId))
+      for (const messageKey of messages) tx.objectStore('messages').delete(messageKey)
+      const events = await request(tx.objectStore('events').index('sessionId').getAllKeys(sessionId))
+      for (const eventKey of events) tx.objectStore('events').delete(eventKey)
+      tx.objectStore('sessions').delete(key)
+    }
+    await done
+  }
+
+  async deleteSession(sessionId: string): Promise<void> {
+    const db = await this.db
+    const tx = db.transaction(['sessions', 'messages', 'events'], 'readwrite')
+    const done = transactionDone(tx)
+    tx.objectStore('sessions').delete(sessionId)
+    const messages = await request(tx.objectStore('messages').index('sessionId').getAllKeys(sessionId))
+    for (const key of messages) tx.objectStore('messages').delete(key)
+    const events = await request(tx.objectStore('events').index('sessionId').getAllKeys(sessionId))
+    for (const key of events) tx.objectStore('events').delete(key)
+    await done
+  }
+
+  async setSessionArchived(sessionId: string, archived: boolean): Promise<void> {
+    const session = await this.getSession(sessionId)
+    if (!session) return
+    const db = await this.db
+    const tx = db.transaction('sessions', 'readwrite')
+    const done = transactionDone(tx)
+    tx.objectStore('sessions').put({
+      ...session,
+      archivedAt: archived ? Date.now() : undefined,
+      updatedAt: Date.now(),
+    })
+    await done
+  }
+
+  async grepWorkspace(workspaceId: string, query: GrepQuery): Promise<GrepResult> {
+    const files = await this.listFiles(workspaceId)
+    const token = ++grepToken
+    const worker = getGrepWorker()
+    worker.postMessage({ type: 'load', token, files: files.map(file => ({ path: file.path, content: file.content })) })
+    return new Promise((resolve) => {
+      grepWaiters.push({ resolve })
+      worker.postMessage({ type: 'search', token, query })
+    })
   }
 
   async appendMessage(message: ChatMessageRecord): Promise<void> {
     const db = await this.db
     const tx = db.transaction('messages', 'readwrite')
+    const done = transactionDone(tx)
     tx.objectStore('messages').put(message)
-    await transactionDone(tx)
+    await done
   }
 
   async listMessages(sessionId: string): Promise<ChatMessageRecord[]> {
     const db = await this.db
     const tx = db.transaction('messages', 'readonly')
+    const done = transactionDone(tx)
     const values = await request(tx.objectStore('messages').index('sessionId').getAll(sessionId))
-    await transactionDone(tx)
+    await done
     return (values as ChatMessageRecord[]).sort((a, b) => a.createdAt - b.createdAt)
   }
 
   async appendEvent(event: AgentEventRecord): Promise<void> {
     const db = await this.db
     const tx = db.transaction('events', 'readwrite')
+    const done = transactionDone(tx)
     tx.objectStore('events').put(event)
-    await transactionDone(tx)
+    await done
   }
 
   async listEvents(sessionId: string): Promise<AgentEventRecord[]> {
     const db = await this.db
     const tx = db.transaction('events', 'readonly')
+    const done = transactionDone(tx)
     const values = await request(tx.objectStore('events').index('sessionId').getAll(sessionId))
-    await transactionDone(tx)
+    await done
     return (values as AgentEventRecord[]).sort((a, b) => a.createdAt - b.createdAt)
   }
 }
