@@ -30,9 +30,14 @@ export function Sidebar(props: SidebarProps) {
   } as CSSProperties
   return (
     <aside className="sidebar" style={mobileStyle}>
-      <button className="sidebar-toggle" title="折叠侧栏" onClick={props.onCollapse}><PanelLeftClose size={15} /></button>
       <div className="sidebar-section workspace-section">
-        <div className="section-label"><span>工作区</span><button className="mini-button" title="新建工作区" onClick={props.onNewWorkspace}><Plus size={14} /></button></div>
+        <div className="section-label">
+          <span>工作区</span>
+          <span className="sidebar-heading-actions">
+            <button className="mini-button" title="新建工作区" onClick={props.onNewWorkspace}><Plus size={14} /></button>
+            <button className="sidebar-toggle sidebar-inline-toggle" title="折叠侧栏" onClick={props.onCollapse}><PanelLeftClose size={15} /></button>
+          </span>
+        </div>
         <div className="workspace-picker" ref={pickerRef}>
           <button className={'workspace-select' + (workspaceMenuOpen ? ' is-open' : '')} aria-haspopup="listbox" aria-expanded={workspaceMenuOpen} onClick={props.onToggleWorkspaceMenu}>
             <Sparkles size={14} />

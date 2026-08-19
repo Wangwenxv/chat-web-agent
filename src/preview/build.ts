@@ -1,4 +1,5 @@
-import type { PreviewArtifact, PreviewDiagnostic, WorkspaceFile } from '../types'
+import type { PreviewArtifact, PreviewDiagnostic, PreviewPermissions, WorkspaceFile } from '../types'
+import { DEFAULT_PREVIEW_PERMISSIONS } from '../types'
 import { dirname, joinPath, normalizeWorkspacePath } from '../lib/path'
 
 const BRIDGE_SOURCE = [
@@ -11,7 +12,43 @@ const BRIDGE_SOURCE = [
   '}());',
 ].join('\n')
 
-export function buildPreview(files: WorkspaceFile[], entryPath = 'index.html'): PreviewArtifact {
+const STORAGE_SHIM_SOURCE = [
+  '(function () {',
+  '  var backing = {};',
+  '  var pending = false;',
+  '  function send(type, data) {',
+  '    try { window.parent.postMessage({ source: "chat-web-agent-preview", type: type, data: data }, "*"); } catch (_) {}',
+  '  }',
+  '  function push() { send("storage-set", backing); }',
+  '  function makeStorage() {',
+  '    var store = {',
+  '      get length() { return Object.keys(backing).length; },',
+  '      key: function (index) { return Object.keys(backing)[index] || null; },',
+  '      getItem: function (key) { return Object.prototype.hasOwnProperty.call(backing, key) ? backing[key] : null; },',
+  '      setItem: function (key, value) { backing[String(key)] = String(value); push(); },',
+  '      removeItem: function (key) { delete backing[String(key)]; push(); },',
+  '      clear: function () { backing = {}; push(); },',
+  '    };',
+  '    return store;',
+  '  }',
+  '  var installed = makeStorage();',
+  '  function install() {',
+  '    try { Object.defineProperty(window, "localStorage", { value: installed, configurable: true, writable: true }); } catch (_) {}',
+  '    try { Object.defineProperty(window, "sessionStorage", { value: installed, configurable: true, writable: true }); } catch (_) {}',
+  '  }',
+  '  window.addEventListener("message", function (event) {',
+  '    var data = event.data;',
+  '    if (!data || data.source !== "chat-web-agent-host" || data.type !== "storage-snapshot") return;',
+  '    backing = data.data && typeof data.data === "object" ? data.data : {};',
+  '    pending = false;',
+  '  });',
+  '  install();',
+  '  send("storage-request", undefined);',
+  '}());',
+].join('\n')
+
+export function buildPreview(files: WorkspaceFile[], entryPath = 'index.html', permissions?: PreviewPermissions): PreviewArtifact {
+  const perms = permissions ?? DEFAULT_PREVIEW_PERMISSIONS
   const diagnostics: PreviewDiagnostic[] = []
   const byPath = new Map(files.map(file => [file.path, file]))
   const entry = byPath.get(entryPath) ?? files.find(file => file.kind === 'html')
@@ -34,6 +71,7 @@ export function buildPreview(files: WorkspaceFile[], entryPath = 'index.html'): 
     const css = target ? byPath.get(target) : undefined
     if (css?.kind === 'css') return '<style data-workspace-file="' + escapeAttribute(css.path) + '">\n' + escapeStyle(css.content) + '\n</style>'
     if (/^https?:\/\//i.test(href)) {
+      if (perms.allowExternalScripts) return full
       diagnostics.push({ level: 'warn', message: 'External stylesheet removed from preview', detail: href })
       return ''
     }
@@ -44,6 +82,7 @@ export function buildPreview(files: WorkspaceFile[], entryPath = 'index.html'): 
     const js = target ? byPath.get(target) : undefined
     if (js?.kind === 'javascript') return '<script data-workspace-file="' + escapeAttribute(js.path) + '">\n' + escapeScript(js.content) + '\n</script>'
     if (/^https?:\/\//i.test(src)) {
+      if (perms.allowExternalScripts) return full
       diagnostics.push({ level: 'warn', message: 'External script removed from preview', detail: src })
       return ''
     }
@@ -53,10 +92,12 @@ export function buildPreview(files: WorkspaceFile[], entryPath = 'index.html'): 
     }
     return full
   })
-  const csp = '<meta http-equiv="Content-Security-Policy" content="default-src \'none\'; style-src \'unsafe-inline\'; script-src \'unsafe-inline\'; img-src data: blob:; font-src data:; connect-src \'none\'; base-uri \'none\'; form-action \'none\';">'
+  const csp = buildCsp(perms)
   const bridge = '<script data-preview-bridge>' + escapeScript(BRIDGE_SOURCE) + '</script>'
-  if (/<head[\s>]/i.test(html)) html = html.replace(/<head([^>]*)>/i, '<head$1>' + csp + bridge)
-  else html = csp + bridge + html
+  const storageShim = perms.allowSameOrigin ? '' : '<script data-storage-shim>' + escapeScript(STORAGE_SHIM_SOURCE) + '</script>'
+  const headInject = csp + bridge + storageShim
+  if (/<head[\s>]/i.test(html)) html = html.replace(/<head([^>]*)>/i, '<head$1>' + headInject)
+  else html = headInject + html
   const knownScripts = new Set(Array.from(byPath.values()).filter(file => file.kind === 'javascript').map(file => file.path))
   const referencedScripts = new Set(Array.from(html.matchAll(/data-workspace-file="([^"]+)"/g), match => match[1]))
   const unusedScripts = [...knownScripts].filter(path => !referencedScripts.has(path))
@@ -64,6 +105,36 @@ export function buildPreview(files: WorkspaceFile[], entryPath = 'index.html'): 
     html = html.replace(/<\/body>/i, unusedScripts.map(path => '<script data-workspace-file="' + escapeAttribute(path) + '">\n' + escapeScript(byPath.get(path)?.content ?? '') + '\n</script>').join('') + '</body>')
   }
   return { srcdoc: html, diagnostics, entryPath: entry.path }
+}
+
+export function buildPreviewSandbox(permissions: PreviewPermissions): string {
+  const flags = ['allow-scripts']
+  if (permissions.allowSameOrigin) flags.push('allow-same-origin')
+  if (permissions.allowPopups) flags.push('allow-popups')
+  if (permissions.allowDownloads) flags.push('allow-downloads')
+  if (permissions.allowForms) flags.push('allow-forms')
+  if (permissions.allowModals) flags.push('allow-modals')
+  return flags.join(' ')
+}
+
+export function buildPreviewAllowAttribute(permissions: PreviewPermissions): string {
+  const features: string[] = []
+  if (permissions.allowFullscreen) features.push('fullscreen')
+  if (permissions.allowClipboard) features.push('clipboard-write')
+  if (permissions.allowMicrophone) features.push('microphone')
+  if (permissions.allowCamera) features.push('camera')
+  return features.join('; ')
+}
+
+function buildCsp(permissions: PreviewPermissions): string {
+  const scriptSrc = permissions.allowEval ? "'unsafe-inline' 'unsafe-eval'" : "'unsafe-inline'"
+  const styleSrc = "'unsafe-inline'"
+  const imgSrc = permissions.allowExternalImages ? 'data: blob: https:' : 'data: blob:'
+  const fontSrc = permissions.allowExternalFonts ? 'data: https:' : 'data:'
+  const connectSrc = permissions.allowNetwork ? 'https: wss: data: blob:' : "'none'"
+  const formAction = permissions.allowForms ? '*' : "'none'"
+  const externalSrc = permissions.allowExternalScripts ? ' https:' : ''
+  return '<meta http-equiv="Content-Security-Policy" content="default-src \'none\'; script-src ' + scriptSrc + externalSrc + '; style-src ' + styleSrc + externalSrc + '; img-src ' + imgSrc + '; font-src ' + fontSrc + '; connect-src ' + connectSrc + '; base-uri \'none\'; form-action ' + formAction + ';">'
 }
 
 function resolveAsset(base: string, value: string): string | null {
@@ -91,4 +162,3 @@ function escapeStyle(value: string): string {
 function escapeScript(value: string): string {
   return value.replaceAll('</script', '<\\/script')
 }
-

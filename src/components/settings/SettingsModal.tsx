@@ -1,16 +1,35 @@
 import { useState } from 'react'
 import { ListTree, LoaderCircle, PlugZap, X } from 'lucide-react'
-import type { AgentSettings } from '../../types'
+import type { AgentSettings, PreviewPermissions } from '../../types'
 import { fetchModelList, parseRequestHeaders, testModelConnection } from '../../model/client'
 
 export interface SettingsModalProps {
   value: AgentSettings
+  permissions: PreviewPermissions
   onClose: () => void
-  onSave: (value: AgentSettings) => void
+  onSave: (value: AgentSettings, permissions: PreviewPermissions) => void
 }
 
-export function SettingsModal({ value, onClose, onSave }: SettingsModalProps) {
+const PERMISSION_ITEMS: Array<{ key: keyof PreviewPermissions; label: string; hint: string }> = [
+  { key: 'allowSameOrigin', label: '同源访问', hint: 'localStorage / IndexedDB / Cookie 等本地存储' },
+  { key: 'allowNetwork', label: '网络请求', hint: 'fetch / XHR / WebSocket 访问外网' },
+  { key: 'allowExternalScripts', label: '外链脚本与样式', hint: 'CDN 的 <script> / <link> 资源' },
+  { key: 'allowExternalImages', label: '外链图片', hint: '<img> 的 https 图片来源' },
+  { key: 'allowExternalFonts', label: '外链字体', hint: '@font-face 的 https 字体来源' },
+  { key: 'allowModals', label: '对话框', hint: 'alert / confirm / prompt' },
+  { key: 'allowPopups', label: '弹窗', hint: 'window.open 新窗口' },
+  { key: 'allowDownloads', label: '下载', hint: 'a[download] 与 Blob 下载' },
+  { key: 'allowForms', label: '表单提交', hint: '<form> 提交与导航' },
+  { key: 'allowFullscreen', label: '全屏', hint: 'requestFullscreen' },
+  { key: 'allowClipboard', label: '剪贴板', hint: 'navigator.clipboard 写入' },
+  { key: 'allowMicrophone', label: '麦克风', hint: 'getUserMedia 录音' },
+  { key: 'allowCamera', label: '摄像头', hint: 'getUserMedia 视频' },
+  { key: 'allowEval', label: '动态代码', hint: 'eval / new Function' },
+]
+
+export function SettingsModal({ value, permissions, onClose, onSave }: SettingsModalProps) {
   const [draft, setDraft] = useState(value)
+  const [permDraft, setPermDraft] = useState(permissions)
   const [testState, setTestState] = useState<'idle' | 'testing' | 'done'>('idle')
   const [testMessage, setTestMessage] = useState('')
   const [testOk, setTestOk] = useState(false)
@@ -19,6 +38,7 @@ export function SettingsModal({ value, onClose, onSave }: SettingsModalProps) {
   const [models, setModels] = useState<string[]>([])
   const [headerError, setHeaderError] = useState('')
   const patch = (next: Partial<AgentSettings>) => setDraft(current => ({ ...current, ...next }))
+  const togglePermission = (key: keyof PreviewPermissions) => setPermDraft(current => ({ ...current, [key]: !current[key] }))
 
   const handleTest = async () => {
     setTestState('testing')
@@ -77,10 +97,20 @@ export function SettingsModal({ value, onClose, onSave }: SettingsModalProps) {
             <label className="field-label">最大步数<input type="number" min={1} max={20} value={draft.maxSteps} onChange={event => patch({ maxSteps: Math.max(1, Math.min(20, Number(event.target.value) || 1)) })} /></label>
             <label className="field-label">最大工具调用<input type="number" min={1} max={50} value={draft.maxToolCalls} onChange={event => patch({ maxToolCalls: Math.max(1, Math.min(50, Number(event.target.value) || 1)) })} /></label>
           </div>
+          <div className="settings-divider" />
+          <div className="permission-heading"><div><span className="eyebrow">沙箱</span><h3>预览权限</h3></div><span className="field-hint">预览页面可使用的能力开关，默认全部开启。关闭后对应能力将不可用。</span></div>
+          <div className="permission-grid">
+            {PERMISSION_ITEMS.map(item => (
+              <label className={'setting-toggle' + (permDraft[item.key] ? ' is-on' : '')} key={item.key}>
+                <input type="checkbox" checked={permDraft[item.key]} onChange={() => togglePermission(item.key)} />
+                <span><strong>{item.label}</strong><small>{item.hint}</small></span>
+              </label>
+            ))}
+          </div>
         </div>
         <div className="modal-actions">
           <span className="security-note">API Key 永远不会进入预览页面或导出的 ZIP。</span>
-          <button className="primary-button" onClick={() => { try { parseRequestHeaders(draft.customHeaders); onSave(draft) } catch (cause) { setHeaderError(cause instanceof Error ? cause.message : String(cause)) } }}>保存设置</button>
+          <button className="primary-button" onClick={() => { try { parseRequestHeaders(draft.customHeaders); onSave(draft, permDraft) } catch (cause) { setHeaderError(cause instanceof Error ? cause.message : String(cause)) } }}>保存设置</button>
         </div>
       </section>
     </div>

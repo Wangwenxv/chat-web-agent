@@ -76,6 +76,40 @@ export interface AgentSettings {
   maxToolCalls: number
 }
 
+export interface PreviewPermissions {
+  allowSameOrigin: boolean
+  allowPopups: boolean
+  allowDownloads: boolean
+  allowForms: boolean
+  allowModals: boolean
+  allowFullscreen: boolean
+  allowClipboard: boolean
+  allowMicrophone: boolean
+  allowCamera: boolean
+  allowNetwork: boolean
+  allowExternalScripts: boolean
+  allowExternalImages: boolean
+  allowExternalFonts: boolean
+  allowEval: boolean
+}
+
+export const DEFAULT_PREVIEW_PERMISSIONS: PreviewPermissions = {
+  allowSameOrigin: true,
+  allowPopups: true,
+  allowDownloads: true,
+  allowForms: true,
+  allowModals: true,
+  allowFullscreen: true,
+  allowClipboard: true,
+  allowMicrophone: true,
+  allowCamera: true,
+  allowNetwork: true,
+  allowExternalScripts: true,
+  allowExternalImages: true,
+  allowExternalFonts: true,
+  allowEval: true,
+}
+
 export interface SearchResultItem {
   title: string
   url: string

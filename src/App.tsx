@@ -1,8 +1,8 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { CSSProperties, PointerEvent as ReactPointerEvent } from 'react'
 import { AlertTriangle, Bot, Code2, Download, Eye, GitCompare, LoaderCircle, PanelLeftOpen, PanelRightClose, PanelRightOpen, Plus, Settings2, X } from 'lucide-react'
-import type { AgentEventRecord, AgentSettings, ChatMessageRecord, PreviewDiagnostic, SessionRecord, WorkspaceFile, WorkspaceRecord } from './types'
-import { buildPreview } from './preview/build'
+import type { AgentEventRecord, AgentSettings, ChatMessageRecord, PreviewDiagnostic, PreviewPermissions, SessionRecord, WorkspaceFile, WorkspaceRecord } from './types'
+import { buildPreview, buildPreviewAllowAttribute, buildPreviewSandbox } from './preview/build'
 import { downloadFile, downloadWorkspaceZip, parseWorkspaceZip } from './export/zip'
 import { runUserTurn } from './agent/runner'
 import { BrowserRepository } from './workspace/repository'
@@ -27,6 +27,7 @@ export default function App() {
   const [messages, setMessages] = useState<ChatMessageRecord[]>([])
   const [events, setEvents] = useState<AgentEventRecord[]>([])
   const [settings, setSettings] = useState<AgentSettings>()
+  const [previewPermissions, setPreviewPermissions] = useState<PreviewPermissions>()
   const [selectedPath, setSelectedPath] = useState('index.html')
   const [inspectorTab, setInspectorTab] = useState<InspectorTab>('preview')
   const [previewDiagnostics, setPreviewDiagnostics] = useState<PreviewDiagnostic[]>([])
@@ -51,7 +52,7 @@ export default function App() {
   const inspectorResizeRef = useRef<{ startX: number; startWidth: number } | undefined>(undefined)
 
   const selectedFile = files.find(file => file.path === selectedPath) ?? files[0]
-  const artifact = useMemo(() => buildPreview(files, workspace?.entryPath ?? 'index.html'), [files, workspace?.entryPath])
+  const artifact = useMemo(() => buildPreview(files, workspace?.entryPath ?? 'index.html', previewPermissions), [files, previewPermissions, workspace?.entryPath])
   const diagnostics = [...artifact.diagnostics, ...previewDiagnostics]
 
   useEffect(() => {
@@ -123,11 +124,12 @@ export default function App() {
     try {
       const nextWorkspace = await repository.ensureWorkspace()
       const nextSession = await repository.getOrCreateSession(nextWorkspace.id)
-      const [nextWorkspaces, nextSettings] = await Promise.all([repository.listWorkspaces(), repository.getSettings()])
+      const [nextWorkspaces, nextSettings, nextPermissions] = await Promise.all([repository.listWorkspaces(), repository.getSettings(), repository.getPreviewPermissions()])
       setWorkspace(nextWorkspace)
       setSession(nextSession)
       setWorkspaces(nextWorkspaces)
       setSettings(nextSettings)
+      setPreviewPermissions(nextPermissions)
       await reload(nextWorkspace.id, nextSession.id)
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : String(cause))
@@ -172,7 +174,20 @@ export default function App() {
       if (event.source !== iframeRef.current?.contentWindow) return
       if (!event.data || typeof event.data !== 'object') return
       const payload = event.data as { source?: unknown; type?: unknown; level?: unknown; message?: unknown; detail?: unknown }
-      if (payload.source !== 'chat-web-agent-preview' || payload.type !== 'diagnostic') return
+      if (payload.source !== 'chat-web-agent-preview') return
+      const frameWindow = iframeRef.current?.contentWindow
+      if (payload.type === 'storage-request' && frameWindow && workspace) {
+        void repository.getPreviewStorage(workspace.id).then(data => {
+          frameWindow.postMessage({ source: 'chat-web-agent-host', type: 'storage-snapshot', data }, '*')
+        })
+        return
+      }
+      if (payload.type === 'storage-set' && workspace) {
+        const data = (payload as { data?: unknown }).data
+        if (data && typeof data === 'object') void repository.savePreviewStorage(workspace.id, data as Record<string, string>)
+        return
+      }
+      if (payload.type !== 'diagnostic') return
       const level = typeof payload.level === 'string' && (payload.level === 'info' || payload.level === 'warn' || payload.level === 'error') ? payload.level : 'info'
       setPreviewDiagnostics(current => [...current.slice(-19), {
         level,
@@ -182,7 +197,7 @@ export default function App() {
     }
     window.addEventListener('message', onMessage)
     return () => window.removeEventListener('message', onMessage)
-  }, [])
+  }, [workspace])
 
   useEffect(() => {
     setPreviewDiagnostics([])
@@ -384,9 +399,11 @@ export default function App() {
     }
   }, [reload, session, settings, workspace?.id])
 
-  const handleSettingsSave = useCallback(async (nextSettings: AgentSettings) => {
+  const handleSettingsSave = useCallback(async (nextSettings: AgentSettings, nextPermissions: PreviewPermissions) => {
     await repository.saveSettings(nextSettings)
+    await repository.savePreviewPermissions(nextPermissions)
     setSettings(nextSettings)
+    setPreviewPermissions(nextPermissions)
     setSettingsOpen(false)
   }, [])
 
@@ -399,7 +416,7 @@ export default function App() {
 
   if (loading) return <div className="loading-screen"><LoaderCircle className="spin" size={20} /><span>正在加载浏览器工作台</span></div>
   if (error && !workspace) return <div className="loading-screen error-screen"><AlertTriangle size={20} /><span>{error}</span></div>
-  if (!workspace || !session || !settings) return null
+  if (!workspace || !session || !settings || !previewPermissions) return null
 
   return (
     <div className="app-shell">
@@ -422,8 +439,6 @@ export default function App() {
       </header>
 
       <main className={'workbench' + (sidebarCollapsed ? ' sidebar-collapsed' : ' sidebar-open') + (inspectorCollapsed ? ' inspector-collapsed' : ' inspector-open') + (narrowLayout ? ' narrow-layout' : '')} style={{ '--inspector-width': `${inspectorWidth}px` } as CSSProperties}>
-        {sidebarCollapsed && <button className="sidebar-toggle open" title="展开侧栏" onClick={openSidebar}><PanelLeftOpen size={15} /></button>}
-        {inspectorCollapsed && <button className="inspector-toggle open" title="展开检查器" onClick={openInspector}><PanelRightOpen size={15} /></button>}
         {narrowLayout && (!sidebarCollapsed || !inspectorCollapsed) && <button className="mobile-backdrop" aria-label="关闭侧栏" onClick={() => { setSidebarCollapsed(true); setInspectorCollapsed(true) }} />}
 
         <Sidebar
@@ -454,10 +469,14 @@ export default function App() {
 
         <section className="conversation-panel">
           <div className="panel-heading conversation-heading">
-            <div><span className="eyebrow">会话</span><h1>{session.title}</h1></div>
+            <div className="conversation-title-block">
+              {sidebarCollapsed && <button className="sidebar-toggle conversation-sidebar-open" title="展开侧栏" onClick={openSidebar}><PanelLeftOpen size={15} /></button>}
+              <div><span className="eyebrow">会话</span><h1>{session.title}</h1></div>
+            </div>
             <div className="heading-actions">
               <button className="icon-button" title="新建会话" onClick={() => void handleNewSession()}><Plus size={15} /></button>
               <div className="model-chip"><span className="mode-dot" />{settings.model}</div>
+              {inspectorCollapsed && <button className="inspector-toggle conversation-inspector-open" title="展开检查器" onClick={openInspector}><PanelRightOpen size={15} /></button>}
             </div>
           </div>
           <div className="message-scroll" ref={messageScrollRef}>
@@ -486,8 +505,8 @@ export default function App() {
         } : undefined}>
           <div className="inspector-resize-handle" role="separator" aria-label="调整检查器宽度" onPointerDown={startInspectorResize} />
           <div className="inspector-sidebar-heading">
-            <span className="section-label">检查器</span>
             <button className="inspector-sidebar-collapse" title="折叠检查器" onClick={() => setInspectorCollapsed(true)}><PanelRightClose size={15} /></button>
+            <span className="section-label">检查器</span>
           </div>
           <div className="inspector-tabs" role="tablist">
             <button className={inspectorTab === 'preview' ? 'active' : ''} onClick={() => setInspectorTab('preview')}><Eye size={15} />预览</button>
@@ -497,7 +516,7 @@ export default function App() {
           </div>
           {!inspectorCollapsed && (
             <>
-              {inspectorTab === 'preview' && <PreviewPanel artifact={artifact} iframeRef={iframeRef} previewKey={previewKey} onRefresh={() => setPreviewDiagnostics([])} onReset={() => setPreviewKey(current => current + 1)} onDownload={() => { const entry = files.find(file => file.path === (workspace.entryPath || 'index.html')) ?? files.find(file => file.kind === 'html'); if (entry) downloadFile(entry) }} />}
+              {inspectorTab === 'preview' && previewPermissions && <PreviewPanel artifact={artifact} iframeRef={iframeRef} previewKey={previewKey} sandbox={buildPreviewSandbox(previewPermissions)} allow={buildPreviewAllowAttribute(previewPermissions)} onRefresh={() => setPreviewDiagnostics([])} onReset={() => setPreviewKey(current => current + 1)} onDownload={() => { const entry = files.find(file => file.path === (workspace.entryPath || 'index.html')) ?? files.find(file => file.kind === 'html'); if (entry) downloadFile(entry) }} />}
               {inspectorTab === 'source' && <SourcePanel file={selectedFile} files={files} onSelectFile={setSelectedPath} onSave={handleSourceSave} />}
               {inspectorTab === 'problems' && <ProblemsPanel diagnostics={diagnostics} />}
               {inspectorTab === 'diff' && <DiffPanel file={selectedFile} revisions={revisionHistory} />}
@@ -506,7 +525,7 @@ export default function App() {
         </aside>
       </main>
 
-      {settingsOpen && <SettingsModal value={settings} onClose={() => setSettingsOpen(false)} onSave={next => void handleSettingsSave(next)} />}
+      {settingsOpen && <SettingsModal value={settings} permissions={previewPermissions} onClose={() => setSettingsOpen(false)} onSave={(next, nextPermissions) => void handleSettingsSave(next, nextPermissions)} />}
     </div>
   )
 }

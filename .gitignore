@@ -1,1 +1,5 @@
 node_modules/*
+.agents/*
+.edge-cdp-debug/*
+.edge-layout-debug/*
+.cwui-knowledge.json

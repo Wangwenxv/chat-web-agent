@@ -2,10 +2,12 @@ import type {
   AgentEventRecord,
   AgentSettings,
   ChatMessageRecord,
+  PreviewPermissions,
   SessionRecord,
   WorkspaceFile,
   WorkspaceRecord,
 } from '../types'
+import { DEFAULT_PREVIEW_PERMISSIONS } from '../types'
 import { fileMetaFromPath, normalizeWorkspacePath } from '../lib/path'
 
 const DB_NAME = 'chat-web-agent'
@@ -145,6 +147,40 @@ export class BrowserRepository {
     const tx = db.transaction('settings', 'readwrite')
     const done = transactionDone(tx)
     tx.objectStore('settings').put({ id: 'default', ...settings })
+    await done
+  }
+
+  async getPreviewPermissions(): Promise<PreviewPermissions> {
+    const db = await this.db
+    const tx = db.transaction('settings', 'readonly')
+    const done = transactionDone(tx)
+    const stored = await request(tx.objectStore('settings').get('preview-permissions')) as PreviewPermissions | undefined
+    await done
+    return { ...DEFAULT_PREVIEW_PERMISSIONS, ...(stored ?? {}) }
+  }
+
+  async savePreviewPermissions(permissions: PreviewPermissions): Promise<void> {
+    const db = await this.db
+    const tx = db.transaction('settings', 'readwrite')
+    const done = transactionDone(tx)
+    tx.objectStore('settings').put({ id: 'preview-permissions', ...permissions })
+    await done
+  }
+
+  async getPreviewStorage(workspaceId: string): Promise<Record<string, string>> {
+    const db = await this.db
+    const tx = db.transaction('settings', 'readonly')
+    const done = transactionDone(tx)
+    const stored = await request(tx.objectStore('settings').get('preview-storage:' + workspaceId)) as Record<string, string> | undefined
+    await done
+    return stored ?? {}
+  }
+
+  async savePreviewStorage(workspaceId: string, data: Record<string, string>): Promise<void> {
+    const db = await this.db
+    const tx = db.transaction('settings', 'readwrite')
+    const done = transactionDone(tx)
+    tx.objectStore('settings').put({ id: 'preview-storage:' + workspaceId, ...data })
     await done
   }
 
