@@ -95,6 +95,16 @@ export default function App() {
     document.body.classList.add('is-resizing-inspector')
   }, [inspectorWidth, narrowLayout])
 
+  const openSidebar = useCallback(() => {
+    if (narrowLayout) setInspectorCollapsed(true)
+    setSidebarCollapsed(false)
+  }, [narrowLayout])
+
+  const openInspector = useCallback(() => {
+    if (narrowLayout) setSidebarCollapsed(true)
+    setInspectorCollapsed(false)
+  }, [narrowLayout])
+
   const reload = useCallback(async (workspaceId: string, sessionId: string) => {
     const [nextFiles, nextMessages, nextEvents, nextSessions] = await Promise.all([
       repository.listFiles(workspaceId),
@@ -325,9 +335,14 @@ export default function App() {
     setSession(nextSession)
     sessionRef.current = nextSession.id
     setSelectedPath(nextWorkspace.entryPath)
-    setInspectorCollapsed(false)
+    if (narrowLayout) {
+      setSidebarCollapsed(true)
+      setInspectorCollapsed(true)
+    } else {
+      setInspectorCollapsed(false)
+    }
     await reload(nextWorkspace.id, nextSession.id)
-  }, [reload])
+  }, [narrowLayout, reload])
 
   const handleImportWorkspace = useCallback(async (file: File) => {
     if (!session || !settings) return
@@ -375,6 +390,13 @@ export default function App() {
     setSettingsOpen(false)
   }, [])
 
+  const handleSourceSave = useCallback(async (file: WorkspaceFile, content: string) => {
+    if (!workspace) throw new Error('工作区已关闭')
+    await repository.writeFile(workspace.id, file.path, content, file.revision)
+    const nextFiles = await repository.listFiles(workspace.id)
+    setFiles(nextFiles)
+  }, [workspace])
+
   if (loading) return <div className="loading-screen"><LoaderCircle className="spin" size={20} /><span>正在加载浏览器工作台</span></div>
   if (error && !workspace) return <div className="loading-screen error-screen"><AlertTriangle size={20} /><span>{error}</span></div>
   if (!workspace || !session || !settings) return null
@@ -399,9 +421,9 @@ export default function App() {
         </div>
       </header>
 
-      <main className={'workbench' + (sidebarCollapsed ? ' sidebar-collapsed' : '') + (inspectorCollapsed ? ' inspector-collapsed' : '') + (narrowLayout ? ' narrow-layout' : '')} style={{ '--inspector-width': `${inspectorWidth}px` } as CSSProperties}>
-        {sidebarCollapsed && <button className="sidebar-toggle open" title="展开侧栏" onClick={() => setSidebarCollapsed(false)}><PanelLeftOpen size={15} /></button>}
-        {inspectorCollapsed && <button className="inspector-toggle open" title="展开沙箱" onClick={() => setInspectorCollapsed(false)}><PanelRightOpen size={15} /></button>}
+      <main className={'workbench' + (sidebarCollapsed ? ' sidebar-collapsed' : ' sidebar-open') + (inspectorCollapsed ? ' inspector-collapsed' : ' inspector-open') + (narrowLayout ? ' narrow-layout' : '')} style={{ '--inspector-width': `${inspectorWidth}px` } as CSSProperties}>
+        {sidebarCollapsed && <button className="sidebar-toggle open" title="展开侧栏" onClick={openSidebar}><PanelLeftOpen size={15} /></button>}
+        {inspectorCollapsed && <button className="inspector-toggle open" title="展开检查器" onClick={openInspector}><PanelRightOpen size={15} /></button>}
         {narrowLayout && (!sidebarCollapsed || !inspectorCollapsed) && <button className="mobile-backdrop" aria-label="关闭侧栏" onClick={() => { setSidebarCollapsed(true); setInspectorCollapsed(true) }} />}
 
         <Sidebar
@@ -427,6 +449,7 @@ export default function App() {
           onNewSession={() => void handleNewSession()}
           onOpenSettings={() => setSettingsOpen(true)}
           onCollapse={() => setSidebarCollapsed(true)}
+          mobileOpen={narrowLayout ? !sidebarCollapsed : undefined}
         />
 
         <section className="conversation-panel">
@@ -455,19 +478,27 @@ export default function App() {
           />
         </section>
 
-        <aside className="inspector-panel">
+        <aside className="inspector-panel" style={narrowLayout ? {
+          display: 'grid',
+          pointerEvents: inspectorCollapsed ? 'none' : 'auto',
+          transform: inspectorCollapsed ? 'translateX(105%)' : 'translateX(0)',
+          zIndex: 100,
+        } : undefined}>
           <div className="inspector-resize-handle" role="separator" aria-label="调整检查器宽度" onPointerDown={startInspectorResize} />
+          <div className="inspector-sidebar-heading">
+            <span className="section-label">检查器</span>
+            <button className="inspector-sidebar-collapse" title="折叠检查器" onClick={() => setInspectorCollapsed(true)}><PanelRightClose size={15} /></button>
+          </div>
           <div className="inspector-tabs" role="tablist">
             <button className={inspectorTab === 'preview' ? 'active' : ''} onClick={() => setInspectorTab('preview')}><Eye size={15} />预览</button>
             <button className={inspectorTab === 'source' ? 'active' : ''} onClick={() => setInspectorTab('source')}><Code2 size={15} />源码</button>
             <button className={inspectorTab === 'problems' ? 'active' : ''} onClick={() => setInspectorTab('problems')}><AlertTriangle size={15} />问题{diagnostics.length > 0 && <span className="tab-count">{diagnostics.length}</span>}</button>
             <button className={inspectorTab === 'diff' ? 'active' : ''} onClick={() => setInspectorTab('diff')}><GitCompare size={15} />差异</button>
-            <button className="inspector-collapse-button" title={inspectorCollapsed ? '展开检查器' : '折叠检查器'} onClick={() => setInspectorCollapsed(current => !current)}>{inspectorCollapsed ? <PanelRightOpen size={15} /> : <PanelRightClose size={15} />}</button>
           </div>
           {!inspectorCollapsed && (
             <>
               {inspectorTab === 'preview' && <PreviewPanel artifact={artifact} iframeRef={iframeRef} previewKey={previewKey} onRefresh={() => setPreviewDiagnostics([])} onReset={() => setPreviewKey(current => current + 1)} onDownload={() => { const entry = files.find(file => file.path === (workspace.entryPath || 'index.html')) ?? files.find(file => file.kind === 'html'); if (entry) downloadFile(entry) }} />}
-              {inspectorTab === 'source' && <SourcePanel file={selectedFile} files={files} onSelectFile={setSelectedPath} />}
+              {inspectorTab === 'source' && <SourcePanel file={selectedFile} files={files} onSelectFile={setSelectedPath} onSave={handleSourceSave} />}
               {inspectorTab === 'problems' && <ProblemsPanel diagnostics={diagnostics} />}
               {inspectorTab === 'diff' && <DiffPanel file={selectedFile} revisions={revisionHistory} />}
             </>

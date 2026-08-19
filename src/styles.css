@@ -2233,3 +2233,206 @@ body.is-resizing-inspector * {
     max-width: none;
   }
 }
+
+/* Explicit drawer state wins over the legacy responsive grid rules above. */
+@media (max-width: 1180px) {
+  .workbench .sidebar {
+    display: flex !important;
+    pointer-events: auto;
+    transform: translateX(-105%);
+    z-index: 100 !important;
+  }
+
+  .workbench.sidebar-open .sidebar {
+    transform: translateX(0) !important;
+  }
+
+  .workbench .inspector-panel {
+    display: grid !important;
+    pointer-events: auto;
+    transform: translateX(105%);
+    z-index: 100 !important;
+    grid-row: auto !important;
+    grid-column: auto !important;
+  }
+
+  .workbench.inspector-open .inspector-panel {
+    transform: translateX(0) !important;
+  }
+
+  .workbench .mobile-backdrop {
+    z-index: 50 !important;
+  }
+
+  .workbench .sidebar-toggle.open,
+  .workbench .inspector-toggle.open {
+    z-index: 120 !important;
+  }
+}
+
+/* Inspector follows the same quiet sidebar structure as the session rail. */
+.inspector-panel {
+  grid-template-rows: 48px 44px minmax(0, 1fr);
+  background: #f8f9fb;
+}
+
+.inspector-sidebar-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  min-width: 0;
+  padding: 0 10px 0 16px;
+  border-bottom: 1px solid var(--line);
+  background: #f8f9fb;
+}
+
+.inspector-sidebar-heading .section-label {
+  margin: 0;
+}
+
+.inspector-sidebar-collapse {
+  display: grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  border: 0;
+  border-radius: 6px;
+  color: var(--text-faint);
+  background: transparent;
+  cursor: pointer;
+}
+
+.inspector-sidebar-collapse:hover {
+  color: var(--text);
+  background: var(--surface-muted);
+}
+
+.inspector-tabs {
+  min-width: 0;
+  min-height: 44px;
+  height: 44px;
+  padding: 3px 10px 0;
+  overflow-x: auto;
+  overflow-y: hidden;
+  scrollbar-width: none;
+  background: var(--surface);
+}
+
+.inspector-tabs::-webkit-scrollbar {
+  display: none;
+}
+
+.inspector-tabs button {
+  flex: 0 0 auto;
+  height: 40px;
+}
+
+.source-content {
+  grid-template-rows: auto minmax(0, 1fr) auto;
+  gap: 8px;
+}
+
+.source-heading {
+  margin-bottom: 0;
+}
+
+.source-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex: none;
+}
+
+.source-dirty {
+  color: var(--amber);
+  font-size: 10px;
+}
+
+.source-save-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+  min-width: 66px;
+  height: 30px;
+  padding: 0 10px;
+  border: 1px solid var(--line-strong);
+  border-radius: 6px;
+  color: var(--text-soft);
+  background: var(--surface);
+  font-size: 11px;
+  cursor: pointer;
+}
+
+.source-save-button:hover:not(:disabled) {
+  color: #fff;
+  border-color: var(--blue);
+  background: var(--blue);
+}
+
+.source-save-button:disabled {
+  cursor: default;
+  opacity: .5;
+}
+
+.source-editor {
+  width: 100%;
+  min-width: 0;
+  min-height: 0;
+  height: 100%;
+  resize: none;
+  overflow: auto;
+  margin: 0;
+  padding: 12px;
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  outline: 0;
+  color: #4c5563;
+  background: #f5f7f9;
+  font: 11px/1.65 ui-monospace, SFMono-Regular, Consolas, monospace;
+  tab-size: 2;
+  white-space: pre;
+}
+
+.source-editor:focus {
+  border-color: var(--blue);
+  box-shadow: 0 0 0 2px var(--blue-soft);
+}
+
+.source-save-error {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 7px 9px;
+  border-radius: 6px;
+  color: var(--red);
+  background: var(--red-soft);
+  font-size: 10px;
+}
+
+@media (max-width: 1180px) {
+  .inspector-panel {
+    grid-template-rows: 48px 44px minmax(0, 1fr);
+  }
+}
+
+@media (max-width: 600px) {
+  .inspector-panel {
+    width: min(100vw - 36px, 680px);
+  }
+
+  .source-heading {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    align-items: center;
+  }
+
+  .source-file-picker {
+    min-width: 0;
+  }
+
+  .source-dirty {
+    display: none;
+  }
+}

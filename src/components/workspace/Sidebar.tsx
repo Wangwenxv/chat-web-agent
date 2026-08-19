@@ -1,4 +1,4 @@
-import type { ReactNode, RefObject } from 'react'
+import type { CSSProperties, ReactNode, RefObject } from 'react'
 import { CheckCircle2, ChevronDown, FolderPlus, FolderUp, PanelLeftClose, Plus, Settings2, Sparkles, Trash2 } from 'lucide-react'
 import type { WorkspaceRecord } from '../../types'
 
@@ -17,12 +17,19 @@ export interface SidebarProps {
   onNewSession: () => void
   onOpenSettings: () => void
   onCollapse: () => void
+  mobileOpen?: boolean
 }
 
 export function Sidebar(props: SidebarProps) {
   const { workspace, workspaces, fileCount, workspaceMenuOpen, pickerRef } = props
+  const mobileStyle = props.mobileOpen === undefined ? undefined : {
+    display: 'flex',
+    pointerEvents: props.mobileOpen ? 'auto' : 'none',
+    transform: props.mobileOpen ? 'translateX(0)' : 'translateX(-105%)',
+    zIndex: 100,
+  } as CSSProperties
   return (
-    <aside className="sidebar">
+    <aside className="sidebar" style={mobileStyle}>
       <button className="sidebar-toggle" title="折叠侧栏" onClick={props.onCollapse}><PanelLeftClose size={15} /></button>
       <div className="sidebar-section workspace-section">
         <div className="section-label"><span>工作区</span><button className="mini-button" title="新建工作区" onClick={props.onNewWorkspace}><Plus size={14} /></button></div>
