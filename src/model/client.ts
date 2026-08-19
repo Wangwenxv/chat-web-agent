@@ -11,7 +11,6 @@ export interface RequestModelOptions {
 
 export async function requestModel(options: RequestModelOptions): Promise<ModelResponse> {
   const { settings, messages, tools, signal, onDelta } = options
-  if (settings.demoMode) return demoResponse(messages)
   const baseUrl = settings.apiBaseUrl.trim().replace(/\/$/, '')
   if (!baseUrl) throw new Error('Model API base URL is empty')
   if (!settings.model.trim()) throw new Error('Model name is empty')
@@ -68,7 +67,6 @@ function buildRequestHeaders(settings: AgentSettings, options: { streaming: bool
 }
 
 export async function fetchModelList(settings: AgentSettings, signal?: AbortSignal): Promise<string[]> {
-  if (settings.demoMode) throw new Error('Demo model has no server-side model list')
   const baseUrl = settings.apiBaseUrl.trim().replace(/\/$/, '')
   if (!baseUrl) throw new Error('Model API base URL is empty')
   const response = await fetch(baseUrl + '/models', {
@@ -178,7 +176,6 @@ function mergeToolCallPart(toolCalls: Map<string, ToolCallRequest>, part: unknow
 }
 
 export async function testModelConnection(settings: AgentSettings): Promise<ConnectionTestResult> {
-  if (settings.demoMode) return { ok: true, message: '演示模式已启用，无需网络请求。' }
   const baseUrl = settings.apiBaseUrl.trim().replace(/\/$/, '')
   if (!baseUrl) throw new Error('Model API base URL is empty')
   if (!settings.model.trim()) throw new Error('Model name is empty')
@@ -204,48 +201,4 @@ function readApiError(data: unknown, status: number): string {
     if (error && typeof error.message === 'string') return 'Model API' + (status ? ' HTTP ' + status : '') + ': ' + error.message
   }
   return 'Model API' + (status ? ' HTTP ' + status : '') + ' error'
-}
-
-function demoResponse(messages: ModelMessage[]): ModelResponse {
-  const isReviewer = messages.some(message => message.role === 'system' && String(message.content ?? '').includes('publish checker'))
-  if (isReviewer) return { content: '{"pass":true,"issues":[]}', toolCalls: [], finishReason: 'stop' }
-  const latestUser = [...messages].reverse().find(message => message.role === 'user')?.content?.toLowerCase() ?? ''
-  const hasWrite = messages.some(message => message.role === 'tool' && message.name === 'workspace_write')
-  const hasSearch = messages.some(message => message.role === 'tool' && message.name === 'web_search')
-  if (!hasWrite && /(写|改|做|创建|页面|网站|按钮|landing|html|css|界面|样式)/i.test(latestUser)) {
-    const accent = latestUser.includes('绿') ? '#c4f36a' : '#9ab8ff'
-    const html = [
-      '<!doctype html>',
-      '<html lang="zh-CN">',
-      '<head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Agent made page</title><link rel="stylesheet" href="styles.css"></head>',
-      '<body><main class="scene"><p class="tag">LOCAL / LIVE</p><h1>把想法，<em>放进浏览器。</em></h1><p>这是 Agent 写入虚拟工作台的第一版。右侧预览与文件树都来自浏览器本地状态。</p><button id="action">点一下试试</button><span id="feedback"></span></main><script src="main.js"></script></body></html>',
-    ].join('\n')
-    const css = [
-      ':root{font-family:Inter,ui-sans-serif,system-ui,sans-serif;color:#f4f7ff;background:#101522}',
-      '*{box-sizing:border-box}body{margin:0;min-height:100vh;background:linear-gradient(135deg,#101522,#1d2c4c)}',
-      '.scene{max-width:680px;min-height:100vh;margin:auto;padding:16vh 8vw;display:grid;align-content:center;gap:20px}',
-      '.tag{margin:0;color:' + accent + ';font-size:12px;font-weight:800;letter-spacing:.18em}',
-      '.scene h1{margin:0;font-size:clamp(46px,8vw,92px);line-height:.94;letter-spacing:-.05em}.scene em{display:block;color:' + accent + ';font-style:normal}',
-      '.scene p:not(.tag){max-width:520px;margin:0;color:#b8c4d9;font-size:18px;line-height:1.6}.scene button{width:max-content;border:0;border-radius:10px;padding:13px 18px;background:' + accent + ';color:#101522;font:inherit;font-weight:800;cursor:pointer}.scene button:hover{filter:brightness(1.12)}#feedback{color:#dce7ff;font-size:14px}',
-    ].join('')
-    const js = "document.querySelector('#action')?.addEventListener('click',()=>{document.querySelector('#feedback').textContent='  Preview is running in a sandbox.'})"
-    return {
-      content: '我先把一个可交互的页面落到浏览器工作台里，然后让预览区立即重建。',
-      toolCalls: [
-        { id: 'demo-write-' + Date.now(), type: 'function', function: { name: 'workspace_write', arguments: JSON.stringify({ path: 'index.html', content: html, expectedRevision: 1 }) } },
-        { id: 'demo-write-css-' + Date.now(), type: 'function', function: { name: 'workspace_write', arguments: JSON.stringify({ path: 'styles.css', content: css, expectedRevision: 1 }) } },
-        { id: 'demo-write-js-' + Date.now(), type: 'function', function: { name: 'workspace_write', arguments: JSON.stringify({ path: 'main.js', content: js, expectedRevision: 1 }) } },
-      ],
-    }
-  }
-  if (!hasSearch && /(搜索|查一下|查找|天气|新闻|资料|search|weather|news)/i.test(latestUser)) {
-    return {
-      content: '我先查一下公开信息，再把结果整理给你。',
-      toolCalls: [{ id: 'demo-search-' + Date.now(), type: 'function', function: { name: 'web_search', arguments: JSON.stringify({ query: latestUser }) } }],
-    }
-  }
-  return {
-    content: '已收到。当前运行在浏览器工作台中，文件、会话和工具事件都保存在本机 IndexedDB。' + (latestUser ? '你刚才说的是“' + latestUser.slice(0, 80) + '”。' : ''),
-    toolCalls: [],
-  }
 }

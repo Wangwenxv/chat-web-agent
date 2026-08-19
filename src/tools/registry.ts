@@ -1,10 +1,10 @@
 import type {
   AgentSettings,
-  SearchResultItem,
   ToolExecutionResult,
   ToolCallRequest,
 } from '../types'
 import { buildLineDiff } from '../lib/diff'
+import { searchWeb } from '../search/providers'
 import { BrowserRepository } from '../workspace/repository'
 
 export interface ToolContext {
@@ -141,7 +141,7 @@ export const toolDefinitions: ModelToolDefinition[] = [
     type: 'function',
     function: {
       name: 'web_search',
-      description: 'Search public web information using the configured browser-side provider. Search results may fail because of provider CORS.',
+      description: 'Search public web information across GitHub, Stack Overflow, Hacker News, and npm without any API key. Returns titles, URLs, and summaries. Multiple sources are queried in parallel; failed sources are reported in the result.',
       parameters: {
         type: 'object',
         required: ['query'],
@@ -250,46 +250,16 @@ async function workspaceDiff(args: Record<string, unknown>, context: ToolContext
 
 async function webSearch(args: Record<string, unknown>, context: ToolContext): Promise<ToolExecutionResult> {
   const query = requiredString(args.query, 'query')
-  if (context.settings.searchProvider === 'disabled') return failure('Web search is disabled in Settings. Enable a browser-side provider first.')
-  if (context.settings.demoMode) {
-    const results: SearchResultItem[] = [{ title: 'Demo search result', url: 'https://example.com/', snippet: `Demo mode received the query: ${query}`, source: 'demo' }]
-    return success(JSON.stringify({ query, results, source: 'demo' }, null, 2), results)
+  try {
+    const { results, sources, failures } = await searchWeb(query, context.signal)
+    if (results.length === 0) {
+      const detail = failures.length > 0 ? '\nFailures:\n' + failures.join('\n') : ''
+      return failure('Web search returned no results for: ' + query + detail)
+    }
+    return success(JSON.stringify({ query, sources, failures, results }, null, 2), results)
+  } catch (error) {
+    return failure('Web search failed: ' + (error instanceof Error ? error.message : String(error)))
   }
-  if (context.settings.searchProvider === 'duckduckgo') {
-    const response = await fetch(`https://api.duckduckgo.com/?q=${encodeURIComponent(query)}&format=json&no_html=1&skip_disambig=1`, { signal: context.signal })
-    if (!response.ok) return failure(`Search provider returned HTTP ${response.status}`)
-    const data = await response.json() as { AbstractText?: string; AbstractURL?: string; Heading?: string; RelatedTopics?: unknown[] }
-    const results: SearchResultItem[] = []
-    if (data.AbstractText && data.AbstractURL) results.push({ title: data.Heading || query, url: data.AbstractURL, snippet: data.AbstractText, source: 'DuckDuckGo' })
-    collectDuckResults(data.RelatedTopics, results)
-    return success(JSON.stringify({ query, results: results.slice(0, 10), source: 'DuckDuckGo' }, null, 2), results.slice(0, 10))
-  }
-  const endpoint = context.settings.searchEndpoint.trim()
-  if (!endpoint) return failure('Custom search endpoint is empty')
-  const headers = parseHeaders(context.settings.searchHeaders)
-  const response = await fetch(`${endpoint}${endpoint.includes('?') ? '&' : '?'}q=${encodeURIComponent(query)}`, { headers, signal: context.signal })
-  if (!response.ok) return failure(`Custom search provider returned HTTP ${response.status}`)
-  const data = await response.json() as { results?: SearchResultItem[] }
-  const results = Array.isArray(data.results) ? data.results.slice(0, 10) : []
-  return success(JSON.stringify({ query, results, source: 'custom' }, null, 2), results)
-}
-
-function collectDuckResults(items: unknown[] | undefined, output: SearchResultItem[]): void {
-  if (!items) return
-  for (const item of items) {
-    if (!item || typeof item !== 'object') continue
-    const value = item as { FirstURL?: string; Text?: string; Topics?: unknown[] }
-    if (value.FirstURL && value.Text) output.push({ title: value.Text.split(' - ')[0] ?? value.Text, url: value.FirstURL, snippet: value.Text, source: 'DuckDuckGo' })
-    collectDuckResults(value.Topics, output)
-    if (output.length >= 10) return
-  }
-}
-
-function parseHeaders(value: string): Record<string, string> {
-  if (!value.trim()) return {}
-  const parsed = JSON.parse(value) as unknown
-  if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) throw new Error('Search headers must be a JSON object')
-  return Object.fromEntries(Object.entries(parsed).filter(([, item]) => typeof item === 'string'))
 }
 
 function requiredString(value: unknown, name: string): string {

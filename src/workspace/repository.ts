@@ -15,15 +15,8 @@ const DEFAULT_SETTINGS: AgentSettings = {
   apiKey: '',
   model: 'deepseek-chat',
   customHeaders: '',
-  demoMode: true,
-  searchProvider: 'disabled',
-  searchEndpoint: '',
-  searchHeaders: '',
-  segmentResponses: true,
-  reviewResponses: true,
   maxSteps: 8,
   maxToolCalls: 24,
-  maxRepairRounds: 1,
 }
 
 export class RevisionConflictError extends Error {

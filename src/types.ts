@@ -61,7 +61,6 @@ export interface AgentEventRecord {
     | 'tool_result'
     | 'workspace_mutation'
     | 'preview_diagnostic'
-    | 'review_result'
     | 'turn_end'
     | 'error'
   createdAt: number
@@ -73,15 +72,8 @@ export interface AgentSettings {
   apiKey: string
   model: string
   customHeaders: string
-  demoMode: boolean
-  searchProvider: 'duckduckgo' | 'custom' | 'disabled'
-  searchEndpoint: string
-  searchHeaders: string
-  segmentResponses: boolean
-  reviewResponses: boolean
   maxSteps: number
   maxToolCalls: number
-  maxRepairRounds: number
 }
 
 export interface SearchResultItem {

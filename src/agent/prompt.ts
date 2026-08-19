@@ -15,6 +15,8 @@ export function buildSystemPrompt(workspace: WorkspaceRecord, files: WorkspaceFi
     '',
     'Answer plainly and concisely. When the user asks for a change, make the change with tools first, then summarize the files and observable result. Do not output pretend tool results.',
     '',
+    'web_search queries public repositories and developer communities (GitHub, Stack Overflow, Hacker News, npm) in parallel and needs no API key. Use it when the user asks for current information, technical facts, or anything outside the virtual workspace. Present the found URLs and sources clearly.',
+    '',
     'Current virtual workspace snapshot:',
     fileSummary,
     '',
