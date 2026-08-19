@@ -213,6 +213,15 @@ export default function App() {
     if (event.type === 'assistant_message' || event.type === 'tool_call' || event.type === 'turn_end') {
       setStreamDraft('')
     }
+    if (event.type === 'turn_title') {
+      const sessionId = sessionRef.current || session?.id || ''
+      const [nextSession, nextSessions] = await Promise.all([
+        repository.getSession(sessionId),
+        repository.listSessions(workspace.id),
+      ])
+      if (nextSession) setSession(nextSession)
+      setSessions(nextSessions)
+    }
     if (event.type === 'workspace_mutation' || event.type === 'tool_result') {
       const nextFiles = await repository.listFiles(workspace.id)
       setFiles(nextFiles)
@@ -423,7 +432,7 @@ export default function App() {
       <header className="topbar">
         <div className="brand">
           <span className="brand-mark"><Bot size={17} /></span>
-          <span className="brand-name">DeepSeek Harness</span>
+          <span className="brand-name">Web chat</span>
           <span className="brand-divider">/</span>
           <span className="brand-product">Browser Agent</span>
         </div>

@@ -93,11 +93,6 @@ export function SettingsModal({ value, permissions, onClose, onSave }: SettingsM
             {testMessage && <span className={'test-message' + (testState === 'done' && testOk ? ' ok' : '')}>{testMessage}</span>}
           </div>
           <div className="settings-divider" />
-          <div className="number-row">
-            <label className="field-label">最大步数<input type="number" min={1} max={20} value={draft.maxSteps} onChange={event => patch({ maxSteps: Math.max(1, Math.min(20, Number(event.target.value) || 1)) })} /></label>
-            <label className="field-label">最大工具调用<input type="number" min={1} max={50} value={draft.maxToolCalls} onChange={event => patch({ maxToolCalls: Math.max(1, Math.min(50, Number(event.target.value) || 1)) })} /></label>
-          </div>
-          <div className="settings-divider" />
           <div className="permission-heading"><div><span className="eyebrow">沙箱</span><h3>预览权限</h3></div><span className="field-hint">预览页面可使用的能力开关，默认全部开启。关闭后对应能力将不可用。</span></div>
           <div className="permission-grid">
             {PERMISSION_ITEMS.map(item => (

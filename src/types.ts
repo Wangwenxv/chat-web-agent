@@ -62,6 +62,7 @@ export interface AgentEventRecord {
     | 'workspace_mutation'
     | 'preview_diagnostic'
     | 'turn_end'
+    | 'turn_title'
     | 'error'
   createdAt: number
   payload: unknown
@@ -72,8 +73,6 @@ export interface AgentSettings {
   apiKey: string
   model: string
   customHeaders: string
-  maxSteps: number
-  maxToolCalls: number
 }
 
 export interface PreviewPermissions {

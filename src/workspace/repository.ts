@@ -17,8 +17,6 @@ const DEFAULT_SETTINGS: AgentSettings = {
   apiKey: '',
   model: 'deepseek-chat',
   customHeaders: '',
-  maxSteps: 8,
-  maxToolCalls: 24,
 }
 
 export class RevisionConflictError extends Error {
@@ -430,6 +428,18 @@ export class BrowserRepository {
       updatedAt: Date.now(),
     })
     await done
+  }
+
+  async renameSession(sessionId: string, title: string): Promise<SessionRecord | undefined> {
+    const session = await this.getSession(sessionId)
+    if (!session) return undefined
+    const renamed: SessionRecord = { ...session, title: title.trim().slice(0, 80) || session.title }
+    const db = await this.db
+    const tx = db.transaction('sessions', 'readwrite')
+    const done = transactionDone(tx)
+    tx.objectStore('sessions').put(renamed)
+    await done
+    return renamed
   }
 
   async grepWorkspace(workspaceId: string, query: GrepQuery): Promise<GrepResult> {

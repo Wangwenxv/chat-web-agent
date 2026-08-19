@@ -1,6 +1,6 @@
-import type { AgentSettings, ModelMessage, ToolCallRequest, WorkspaceFile, WorkspaceRecord } from '../types'
+import type { ModelMessage, ToolCallRequest, WorkspaceFile, WorkspaceRecord } from '../types'
 
-export function buildSystemPrompt(workspace: WorkspaceRecord, files: WorkspaceFile[], settings: AgentSettings): string {
+export function buildSystemPrompt(workspace: WorkspaceRecord, files: WorkspaceFile[]): string {
   const fileSummary = files.map(file => file.path + ' (rev ' + file.revision + ', ' + file.content.length + ' chars' + (file.previewable ? ', previewable' : '') + ')').join('\n') || '(empty)'
   return [
     'You are a browser-only coding agent running inside a virtual web workbench called "' + workspace.title + '".',
@@ -19,8 +19,6 @@ export function buildSystemPrompt(workspace: WorkspaceRecord, files: WorkspaceFi
     '',
     'Current virtual workspace snapshot:',
     fileSummary,
-    '',
-    'Agent limits: max ' + settings.maxSteps + ' model steps and ' + settings.maxToolCalls + ' tool calls per turn.',
   ].join('\n')
 }
 

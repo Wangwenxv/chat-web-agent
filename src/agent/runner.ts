@@ -4,6 +4,7 @@ import { buildSystemPrompt, deriveModelMessages } from './prompt'
 import { requestModel } from '../model/client'
 import { executeTool, toolDefinitions } from '../tools/registry'
 import { buildPreview } from '../preview/build'
+import { summarizeUserQuestion } from './title'
 import { BrowserRepository } from '../workspace/repository'
 
 export interface RunTurnOptions {
@@ -42,8 +43,19 @@ export async function runUserTurn(options: RunTurnOptions): Promise<RunTurnResul
   await emit('user_message', { messageId: userMessage.id, content: userMessage.content })
   if (!userMessage.content) throw new Error('Message cannot be empty')
 
+  // First turn only: derive the short title with a separate model call before
+  // the agent starts working, so the session title updates immediately.
+  const isFirstTurn = (await repository.listMessages(sessionId)).length === 1
+  if (isFirstTurn) {
+    const turnTitle = await summarizeUserQuestion(settings, userMessage.content)
+    if (turnTitle !== undefined) {
+      await repository.renameSession(sessionId, turnTitle)
+      await emit('turn_title', { messageId: userMessage.id, turnTitle })
+    }
+  }
+
   try {
-    while (steps < settings.maxSteps) {
+    while (true) {
       if (signal?.aborted) throw new DOMException('Turn cancelled', 'AbortError')
       steps += 1
       const workspace = await repository.getWorkspace(workspaceId)
@@ -51,7 +63,7 @@ export async function runUserTurn(options: RunTurnOptions): Promise<RunTurnResul
       const files = await repository.listFiles(workspaceId)
       const history = await repository.listMessages(sessionId)
       const modelMessages = deriveModelMessages([
-        { role: 'system', content: buildSystemPrompt(workspace, files, settings) },
+        { role: 'system', content: buildSystemPrompt(workspace, files) },
         ...history.map(message => ({
           role: message.role,
           content: message.content,
@@ -68,9 +80,6 @@ export async function runUserTurn(options: RunTurnOptions): Promise<RunTurnResul
         onDelta,
       })
       if (response.toolCalls.length > 0) {
-        if (toolCallCount + response.toolCalls.length > settings.maxToolCalls) {
-          throw new Error('Tool-call limit reached for this turn')
-        }
         const toolAssistant: ChatMessageRecord = {
           id: id('message'),
           sessionId,
@@ -127,7 +136,6 @@ export async function runUserTurn(options: RunTurnOptions): Promise<RunTurnResul
       await emit('turn_end', { steps, toolCalls: toolCallCount, segmented: true, segments: check.segments })
       return { assistantMessage, toolCalls: toolCallCount, steps }
     }
-    throw new Error('Step limit reached for this turn')
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error)
     await emit('error', { message, steps, toolCalls: toolCallCount })
