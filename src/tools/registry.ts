@@ -1,8 +1,4 @@
-import type {
-  AgentSettings,
-  ToolExecutionResult,
-  ToolCallRequest,
-} from '../types'
+import type { AgentSettings, ToolExecutionResult, ToolCallRequest } from '../types'
 import { buildLineDiff } from '../lib/diff'
 import { searchWeb } from '../search/providers'
 import { BrowserRepository } from '../workspace/repository'
@@ -30,7 +26,8 @@ export const toolDefinitions: ModelToolDefinition[] = [
     type: 'function',
     function: {
       name: 'workspace_list',
-      description: 'List files in the browser virtual workspace. This is the only workspace you can access.',
+      description:
+        'List files in the browser virtual workspace. This is the only workspace you can access.',
       parameters: {
         type: 'object',
         properties: { prefix: stringProperty('Optional relative path prefix') },
@@ -59,14 +56,19 @@ export const toolDefinitions: ModelToolDefinition[] = [
     type: 'function',
     function: {
       name: 'workspace_write',
-      description: 'Create or replace a web workspace file. Use this for HTML, CSS, JavaScript, JSON, SVG, or text assets. Never write Python, shell, PowerShell, executables, or server scripts.',
+      description:
+        'Create or replace a web workspace file. Use this for HTML, CSS, JavaScript, JSON, SVG, or text assets. Never write Python, shell, PowerShell, executables, or server scripts.',
       parameters: {
         type: 'object',
         required: ['path', 'content'],
         properties: {
           path: stringProperty('Relative workspace path'),
           content: stringProperty('Complete text file content'),
-          expectedRevision: { type: 'integer', minimum: 1, description: 'Optional revision read previously' },
+          expectedRevision: {
+            type: 'integer',
+            minimum: 1,
+            description: 'Optional revision read previously',
+          },
         },
         additionalProperties: false,
       },
@@ -76,7 +78,8 @@ export const toolDefinitions: ModelToolDefinition[] = [
     type: 'function',
     function: {
       name: 'workspace_edit',
-      description: 'Apply one exact text replacement to a file after reading it. The revision must match the current file revision.',
+      description:
+        'Apply one exact text replacement to a file after reading it. The revision must match the current file revision.',
       parameters: {
         type: 'object',
         required: ['path', 'oldText', 'newText', 'expectedRevision'],
@@ -94,7 +97,8 @@ export const toolDefinitions: ModelToolDefinition[] = [
     type: 'function',
     function: {
       name: 'workspace_grep',
-      description: 'Search text inside the browser virtual workspace. This does not search the user computer.',
+      description:
+        'Search text inside the browser virtual workspace. This does not search the user computer.',
       parameters: {
         type: 'object',
         required: ['pattern'],
@@ -102,7 +106,10 @@ export const toolDefinitions: ModelToolDefinition[] = [
           pattern: stringProperty('Plain text or JavaScript regular expression'),
           path: stringProperty('Optional path prefix or exact file path'),
           caseSensitive: { type: 'boolean', description: 'Default false' },
-          useRegex: { type: 'boolean', description: 'Default false; use plain text search unless needed' },
+          useRegex: {
+            type: 'boolean',
+            description: 'Default false; use plain text search unless needed',
+          },
           maxResults: { type: 'integer', minimum: 1, maximum: 100, description: 'Default 50' },
         },
         additionalProperties: false,
@@ -141,7 +148,8 @@ export const toolDefinitions: ModelToolDefinition[] = [
     type: 'function',
     function: {
       name: 'web_search',
-      description: 'Search public web information across GitHub, Stack Overflow, Hacker News, and npm without any API key. Returns titles, URLs, and summaries. Multiple sources are queried in parallel; failed sources are reported in the result.',
+      description:
+        'Search public web information across GitHub, Stack Overflow, Hacker News, and npm without any API key. Returns titles, URLs, and summaries. Multiple sources are queried in parallel; failed sources are reported in the result.',
       parameters: {
         type: 'object',
         required: ['query'],
@@ -152,61 +160,126 @@ export const toolDefinitions: ModelToolDefinition[] = [
   },
 ]
 
-export async function executeTool(call: ToolCallRequest, context: ToolContext): Promise<ToolExecutionResult> {
+export async function executeTool(
+  call: ToolCallRequest,
+  context: ToolContext,
+): Promise<ToolExecutionResult> {
   let args: Record<string, unknown>
   try {
     const parsed = JSON.parse(call.function.arguments || '{}') as unknown
-    if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) throw new Error('arguments must be an object')
+    if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed))
+      throw new Error('arguments must be an object')
     args = parsed as Record<string, unknown>
   } catch (error) {
-    return failure(`Invalid arguments for ${call.function.name}: ${error instanceof Error ? error.message : String(error)}`)
+    return failure(
+      `Invalid arguments for ${call.function.name}: ${error instanceof Error ? error.message : String(error)}`,
+    )
   }
 
   try {
     switch (call.function.name) {
-      case 'workspace_list': return await workspaceList(args, context)
-      case 'workspace_read': return await workspaceRead(args, context)
-      case 'workspace_write': return await workspaceWrite(args, context)
-      case 'workspace_edit': return await workspaceEdit(args, context)
-      case 'workspace_grep': return await workspaceGrep(args, context)
-      case 'workspace_stats': return await workspaceStats(context)
-      case 'workspace_diff': return await workspaceDiff(args, context)
-      case 'web_search': return await webSearch(args, context)
-      default: return failure(`Unknown tool: ${call.function.name}`)
+      case 'workspace_list':
+        return await workspaceList(args, context)
+      case 'workspace_read':
+        return await workspaceRead(args, context)
+      case 'workspace_write':
+        return await workspaceWrite(args, context)
+      case 'workspace_edit':
+        return await workspaceEdit(args, context)
+      case 'workspace_grep':
+        return await workspaceGrep(args, context)
+      case 'workspace_stats':
+        return await workspaceStats(context)
+      case 'workspace_diff':
+        return await workspaceDiff(args, context)
+      case 'web_search':
+        return await webSearch(args, context)
+      default:
+        return failure(`Unknown tool: ${call.function.name}`)
     }
   } catch (error) {
     return failure(error instanceof Error ? error.message : String(error))
   }
 }
 
-async function workspaceList(args: Record<string, unknown>, context: ToolContext): Promise<ToolExecutionResult> {
-  const prefix = typeof args.prefix === 'string' ? args.prefix.replaceAll('\\', '/').replace(/^\/+/, '') : ''
+async function workspaceList(
+  args: Record<string, unknown>,
+  context: ToolContext,
+): Promise<ToolExecutionResult> {
+  const prefix =
+    typeof args.prefix === 'string' ? args.prefix.replaceAll('\\', '/').replace(/^\/+/, '') : ''
   const files = (await context.repository.listFiles(context.workspaceId))
-    .filter(file => !prefix || file.path.startsWith(prefix))
-    .map(file => ({ path: file.path, language: file.language, bytes: file.content.length, revision: file.revision, previewable: file.previewable }))
+    .filter((file) => !prefix || file.path.startsWith(prefix))
+    .map((file) => ({
+      path: file.path,
+      language: file.language,
+      bytes: file.content.length,
+      revision: file.revision,
+      previewable: file.previewable,
+    }))
   return success(JSON.stringify({ files, count: files.length }, null, 2), files)
 }
 
-async function workspaceRead(args: Record<string, unknown>, context: ToolContext): Promise<ToolExecutionResult> {
+async function workspaceRead(
+  args: Record<string, unknown>,
+  context: ToolContext,
+): Promise<ToolExecutionResult> {
   const path = requiredString(args.path, 'path')
   const file = await context.repository.getFile(context.workspaceId, path)
   if (!file) return failure(`File not found: ${path}`)
   const lines = file.content.split('\n')
   const start = Math.max(1, numberArg(args.startLine, 1))
   const end = Math.min(lines.length, numberArg(args.endLine, lines.length))
-  const body = lines.slice(start - 1, end).map((line, index) => `${String(start + index).padStart(4, ' ')} | ${line}`).join('\n')
-  return success(JSON.stringify({ path: file.path, revision: file.revision, startLine: start, endLine: end, content: body }, null, 2), { path: file.path, revision: file.revision })
+  const body = lines
+    .slice(start - 1, end)
+    .map((line, index) => `${String(start + index).padStart(4, ' ')} | ${line}`)
+    .join('\n')
+  return success(
+    JSON.stringify(
+      { path: file.path, revision: file.revision, startLine: start, endLine: end, content: body },
+      null,
+      2,
+    ),
+    { path: file.path, revision: file.revision },
+  )
 }
 
-async function workspaceWrite(args: Record<string, unknown>, context: ToolContext): Promise<ToolExecutionResult> {
+async function workspaceWrite(
+  args: Record<string, unknown>,
+  context: ToolContext,
+): Promise<ToolExecutionResult> {
   const path = requiredString(args.path, 'path')
   const content = requiredString(args.content, 'content')
-  const expectedRevision = args.expectedRevision === undefined ? undefined : numberArg(args.expectedRevision, 0)
-  const file = await context.repository.writeFile(context.workspaceId, path, content, expectedRevision)
-  return success(JSON.stringify({ path: file.path, revision: file.revision, bytes: content.length, preview: file.previewable ? 'rebuild scheduled' : 'stored as text; no browser preview adapter' }, null, 2), { path: file.path, revision: file.revision }, file.path)
+  const expectedRevision =
+    args.expectedRevision === undefined ? undefined : numberArg(args.expectedRevision, 0)
+  const file = await context.repository.writeFile(
+    context.workspaceId,
+    path,
+    content,
+    expectedRevision,
+  )
+  return success(
+    JSON.stringify(
+      {
+        path: file.path,
+        revision: file.revision,
+        bytes: content.length,
+        preview: file.previewable
+          ? 'rebuild scheduled'
+          : 'stored as text; no browser preview adapter',
+      },
+      null,
+      2,
+    ),
+    { path: file.path, revision: file.revision },
+    file.path,
+  )
 }
 
-async function workspaceEdit(args: Record<string, unknown>, context: ToolContext): Promise<ToolExecutionResult> {
+async function workspaceEdit(
+  args: Record<string, unknown>,
+  context: ToolContext,
+): Promise<ToolExecutionResult> {
   const file = await context.repository.editFile(
     context.workspaceId,
     requiredString(args.path, 'path'),
@@ -214,21 +287,56 @@ async function workspaceEdit(args: Record<string, unknown>, context: ToolContext
     requiredString(args.newText, 'newText'),
     numberArg(args.expectedRevision, 0),
   )
-  return success(JSON.stringify({ path: file.path, revision: file.revision, preview: file.previewable ? 'rebuild scheduled' : 'stored as text' }, null, 2), { path: file.path, revision: file.revision }, file.path)
+  return success(
+    JSON.stringify(
+      {
+        path: file.path,
+        revision: file.revision,
+        preview: file.previewable ? 'rebuild scheduled' : 'stored as text',
+      },
+      null,
+      2,
+    ),
+    { path: file.path, revision: file.revision },
+    file.path,
+  )
 }
 
-async function workspaceGrep(args: Record<string, unknown>, context: ToolContext): Promise<ToolExecutionResult> {
+async function workspaceGrep(
+  args: Record<string, unknown>,
+  context: ToolContext,
+): Promise<ToolExecutionResult> {
   const pattern = requiredString(args.pattern, 'pattern')
   const useRegex = args.useRegex === true
   const caseSensitive = args.caseSensitive === true
   const maxResults = Math.min(100, Math.max(1, numberArg(args.maxResults, 50)))
   const pathFilter = typeof args.path === 'string' ? args.path.replaceAll('\\', '/') : ''
   try {
-    const result = await context.repository.grepWorkspace(context.workspaceId, { pattern, useRegex, caseSensitive, maxResults, pathFilter })
+    const result = await context.repository.grepWorkspace(context.workspaceId, {
+      pattern,
+      useRegex,
+      caseSensitive,
+      maxResults,
+      pathFilter,
+    })
     if (result.error) return failure(result.error)
-    return success(JSON.stringify({ pattern, matches: result.matches, truncated: result.truncated, elapsedMs: result.elapsedMs }, null, 2), result.matches)
+    return success(
+      JSON.stringify(
+        {
+          pattern,
+          matches: result.matches,
+          truncated: result.truncated,
+          elapsedMs: result.elapsedMs,
+        },
+        null,
+        2,
+      ),
+      result.matches,
+    )
   } catch (error) {
-    return failure(`Search worker failed: ${error instanceof Error ? error.message : String(error)}`)
+    return failure(
+      `Search worker failed: ${error instanceof Error ? error.message : String(error)}`,
+    )
   }
 }
 
@@ -237,18 +345,27 @@ async function workspaceStats(context: ToolContext): Promise<ToolExecutionResult
   return success(JSON.stringify(stats, null, 2), stats)
 }
 
-async function workspaceDiff(args: Record<string, unknown>, context: ToolContext): Promise<ToolExecutionResult> {
+async function workspaceDiff(
+  args: Record<string, unknown>,
+  context: ToolContext,
+): Promise<ToolExecutionResult> {
   const path = requiredString(args.path, 'path')
   const revision = numberArg(args.revision, 0)
   const current = await context.repository.getFile(context.workspaceId, path)
   const revisions = await context.repository.listRevisions(context.workspaceId, path)
-  const saved = revisions.find(item => item.revision === revision)
+  const saved = revisions.find((item) => item.revision === revision)
   if (!current || !saved) return failure(`Revision ${revision} was not found for ${path}`)
   const diff = buildLineDiff(saved.content, current.content)
-  return success(JSON.stringify({ path, fromRevision: revision, toRevision: current.revision, diff }, null, 2), diff)
+  return success(
+    JSON.stringify({ path, fromRevision: revision, toRevision: current.revision, diff }, null, 2),
+    diff,
+  )
 }
 
-async function webSearch(args: Record<string, unknown>, context: ToolContext): Promise<ToolExecutionResult> {
+async function webSearch(
+  args: Record<string, unknown>,
+  context: ToolContext,
+): Promise<ToolExecutionResult> {
   const query = requiredString(args.query, 'query')
   try {
     const { results, sources, failures } = await searchWeb(query, context.signal)
@@ -263,7 +380,8 @@ async function webSearch(args: Record<string, unknown>, context: ToolContext): P
 }
 
 function requiredString(value: unknown, name: string): string {
-  if (typeof value !== 'string' || value.length === 0) throw new Error(`${name} must be a non-empty string`)
+  if (typeof value !== 'string' || value.length === 0)
+    throw new Error(`${name} must be a non-empty string`)
   return value
 }
 
@@ -271,7 +389,8 @@ function numberArg(value: unknown, fallback: number): number {
   return typeof value === 'number' && Number.isFinite(value) ? Math.floor(value) : fallback
 }
 
-function success(content: string, data?: unknown, changedPath?: string): ToolExecutionResult {  return { ok: true, content: cap(content), data, changedPath }
+function success(content: string, data?: unknown, changedPath?: string): ToolExecutionResult {
+  return { ok: true, content: cap(content), data, changedPath }
 }
 
 function failure(error: string): ToolExecutionResult {
@@ -281,4 +400,3 @@ function failure(error: string): ToolExecutionResult {
 function cap(value: string): string {
   return value.length > 65536 ? `${value.slice(0, 65536)}\n...[result truncated]` : value
 }
-

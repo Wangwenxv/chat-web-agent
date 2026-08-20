@@ -1,12 +1,5 @@
 export type FileKind =
-  | 'html'
-  | 'css'
-  | 'javascript'
-  | 'json'
-  | 'svg'
-  | 'typescript'
-  | 'markdown'
-  | 'text'
+  'html' | 'css' | 'javascript' | 'json' | 'svg' | 'typescript' | 'markdown' | 'text'
 
 export interface WorkspaceFile {
   path: string
@@ -43,11 +36,20 @@ export interface ChatMessageRecord {
   sessionId: string
   role: MessageRole
   content: string
+  attachments?: ChatAttachment[]
   createdAt: number
   name?: string
   toolCallId?: string
   toolCalls?: ToolCallRequest[]
   status?: 'streaming' | 'final' | 'error'
+}
+
+export interface ChatAttachment {
+  id: string
+  name: string
+  mimeType: string
+  size: number
+  dataUrl: string
 }
 
 export interface AgentEventRecord {
@@ -73,6 +75,7 @@ export interface AgentSettings {
   apiKey: string
   model: string
   customHeaders: string
+  supportsMultimodal: boolean
 }
 
 export interface PreviewPermissions {
@@ -147,11 +150,16 @@ export interface ToolExecutionResult {
 
 export interface ModelMessage {
   role: 'system' | 'user' | 'assistant' | 'tool'
-  content: string | null
+  content: string | ModelContentPart[] | null
   name?: string
   tool_call_id?: string
   tool_calls?: ToolCallRequest[]
 }
+
+export type ModelContentPart =
+  | { type: 'text'; text: string }
+  | { type: 'image_url'; image_url: { url: string; detail?: 'auto' | 'low' | 'high' } }
+  | { type: 'file'; file: { filename: string; file_data: string } }
 
 export type ModelChunk =
   | { kind: 'text'; text: string }

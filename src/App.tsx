@@ -1,7 +1,31 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { CSSProperties, PointerEvent as ReactPointerEvent } from 'react'
-import { AlertTriangle, Bot, Code2, Download, Eye, GitCompare, LoaderCircle, PanelLeftOpen, PanelRightClose, PanelRightOpen, Plus, Settings2, X } from 'lucide-react'
-import type { AgentEventRecord, AgentSettings, ChatMessageRecord, PreviewDiagnostic, PreviewPermissions, SessionRecord, WorkspaceFile, WorkspaceRecord } from './types'
+import {
+  AlertTriangle,
+  Bot,
+  Code2,
+  Download,
+  Eye,
+  GitCompare,
+  LoaderCircle,
+  PanelLeftOpen,
+  PanelRightClose,
+  PanelRightOpen,
+  Plus,
+  Settings2,
+  X,
+} from 'lucide-react'
+import type {
+  AgentEventRecord,
+  AgentSettings,
+  ChatAttachment,
+  ChatMessageRecord,
+  PreviewDiagnostic,
+  PreviewPermissions,
+  SessionRecord,
+  WorkspaceFile,
+  WorkspaceRecord,
+} from './types'
 import { buildPreview, buildPreviewAllowAttribute, buildPreviewSandbox } from './preview/build'
 import { downloadFile, downloadWorkspaceZip, parseWorkspaceZip } from './export/zip'
 import { runUserTurn } from './agent/runner'
@@ -10,6 +34,7 @@ import { Sidebar } from './components/workspace/Sidebar'
 import { SessionList } from './components/chat/SessionList'
 import { MessageView, EmptyConversation, TurnStatus } from './components/chat/MessageView'
 import { Composer } from './components/chat/Composer'
+import { MarkdownRenderer } from './components/chat/MarkdownRenderer'
 import { PreviewPanel } from './components/inspector/PreviewPanel'
 import { SourcePanel, ProblemsPanel, DiffPanel } from './components/inspector/InspectorPanels'
 import { SettingsModal } from './components/settings/SettingsModal'
@@ -31,8 +56,11 @@ export default function App() {
   const [selectedPath, setSelectedPath] = useState('index.html')
   const [inspectorTab, setInspectorTab] = useState<InspectorTab>('preview')
   const [previewDiagnostics, setPreviewDiagnostics] = useState<PreviewDiagnostic[]>([])
-  const [revisionHistory, setRevisionHistory] = useState<Array<{ revision: number; content: string; createdAt: number }>>([])
+  const [revisionHistory, setRevisionHistory] = useState<
+    { revision: number; content: string; createdAt: number }[]
+  >([])
   const [inputValue, setInputValue] = useState('')
+  const [inputAttachments, setInputAttachments] = useState<ChatAttachment[]>([])
   const [settingsOpen, setSettingsOpen] = useState(false)
   const [running, setRunning] = useState(false)
   const [loading, setLoading] = useState(true)
@@ -44,15 +72,20 @@ export default function App() {
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false)
   const [inspectorCollapsed, setInspectorCollapsed] = useState(false)
   const [narrowLayout, setNarrowLayout] = useState(false)
-  const [inspectorWidth, setInspectorWidth] = useState(() => Math.max(360, Math.round(window.innerWidth * .39)))
+  const [inspectorWidth, setInspectorWidth] = useState(() =>
+    Math.max(360, Math.round(window.innerWidth * 0.39)),
+  )
   const [workspaceMenuOpen, setWorkspaceMenuOpen] = useState(false)
   const sessionRef = useRef('')
   const messageScrollRef = useRef<HTMLDivElement>(null)
   const workspacePickerRef = useRef<HTMLDivElement>(null)
   const inspectorResizeRef = useRef<{ startX: number; startWidth: number } | undefined>(undefined)
 
-  const selectedFile = files.find(file => file.path === selectedPath) ?? files[0]
-  const artifact = useMemo(() => buildPreview(files, workspace?.entryPath ?? 'index.html', previewPermissions), [files, previewPermissions, workspace?.entryPath])
+  const selectedFile = files.find((file) => file.path === selectedPath) ?? files[0]
+  const artifact = useMemo(
+    () => buildPreview(files, workspace?.entryPath ?? 'index.html', previewPermissions),
+    [files, previewPermissions, workspace?.entryPath],
+  )
   const diagnostics = [...artifact.diagnostics, ...previewDiagnostics]
 
   useEffect(() => {
@@ -75,10 +108,16 @@ export default function App() {
       const drag = inspectorResizeRef.current
       if (!drag || narrowLayout) return
       const maxWidth = Math.min(760, Math.max(360, window.innerWidth - 520))
-      const nextWidth = Math.max(320, Math.min(maxWidth, drag.startWidth + drag.startX - event.clientX))
+      const nextWidth = Math.max(
+        320,
+        Math.min(maxWidth, drag.startWidth + drag.startX - event.clientX),
+      )
       setInspectorWidth(nextWidth)
     }
-    const stopResize = () => { inspectorResizeRef.current = undefined; document.body.classList.remove('is-resizing-inspector') }
+    const stopResize = () => {
+      inspectorResizeRef.current = undefined
+      document.body.classList.remove('is-resizing-inspector')
+    }
     window.addEventListener('pointermove', handlePointerMove)
     window.addEventListener('pointerup', stopResize)
     window.addEventListener('pointercancel', stopResize)
@@ -89,12 +128,15 @@ export default function App() {
     }
   }, [narrowLayout])
 
-  const startInspectorResize = useCallback((event: ReactPointerEvent<HTMLDivElement>) => {
-    if (narrowLayout) return
-    event.preventDefault()
-    inspectorResizeRef.current = { startX: event.clientX, startWidth: inspectorWidth }
-    document.body.classList.add('is-resizing-inspector')
-  }, [inspectorWidth, narrowLayout])
+  const startInspectorResize = useCallback(
+    (event: ReactPointerEvent<HTMLDivElement>) => {
+      if (narrowLayout) return
+      event.preventDefault()
+      inspectorResizeRef.current = { startX: event.clientX, startWidth: inspectorWidth }
+      document.body.classList.add('is-resizing-inspector')
+    },
+    [inspectorWidth, narrowLayout],
+  )
 
   const openSidebar = useCallback(() => {
     if (narrowLayout) setInspectorCollapsed(true)
@@ -117,14 +159,22 @@ export default function App() {
     setMessages(nextMessages)
     setEvents(nextEvents)
     setSessions(nextSessions)
-    setSelectedPath(current => nextFiles.some(file => file.path === current) ? current : nextFiles[0]?.path ?? 'index.html')
+    setSelectedPath((current) =>
+      nextFiles.some((file) => file.path === current)
+        ? current
+        : (nextFiles[0]?.path ?? 'index.html'),
+    )
   }, [])
 
   const bootstrap = useCallback(async () => {
     try {
       const nextWorkspace = await repository.ensureWorkspace()
       const nextSession = await repository.getOrCreateSession(nextWorkspace.id)
-      const [nextWorkspaces, nextSettings, nextPermissions] = await Promise.all([repository.listWorkspaces(), repository.getSettings(), repository.getPreviewPermissions()])
+      const [nextWorkspaces, nextSettings, nextPermissions] = await Promise.all([
+        repository.listWorkspaces(),
+        repository.getSettings(),
+        repository.getPreviewPermissions(),
+      ])
       setWorkspace(nextWorkspace)
       setSession(nextSession)
       setWorkspaces(nextWorkspaces)
@@ -138,19 +188,27 @@ export default function App() {
     }
   }, [reload])
 
-  useEffect(() => { void bootstrap() }, [bootstrap])
+  useEffect(() => {
+    void bootstrap()
+  }, [bootstrap])
 
   useEffect(() => {
+    const filePath = selectedFile?.path
     setRevisionHistory([])
-    if (workspace && selectedFile) {
-      void repository.listRevisions(workspace.id, selectedFile.path).then(setRevisionHistory).catch(() => setRevisionHistory([]))
+    if (workspace && filePath) {
+      void repository
+        .listRevisions(workspace.id, filePath)
+        .then(setRevisionHistory)
+        .catch(() => setRevisionHistory([]))
     }
   }, [selectedFile?.path, selectedFile?.revision, workspace])
 
   useEffect(() => {
     const scroll = messageScrollRef.current
     if (!scroll) return
-    requestAnimationFrame(() => { scroll.scrollTop = scroll.scrollHeight })
+    requestAnimationFrame(() => {
+      scroll.scrollTop = scroll.scrollHeight
+    })
   }, [messages, events, streamDraft, running])
 
   useEffect(() => {
@@ -173,27 +231,44 @@ export default function App() {
     const onMessage = (event: MessageEvent<unknown>) => {
       if (event.source !== iframeRef.current?.contentWindow) return
       if (!event.data || typeof event.data !== 'object') return
-      const payload = event.data as { source?: unknown; type?: unknown; level?: unknown; message?: unknown; detail?: unknown }
+      const payload = event.data as {
+        source?: unknown
+        type?: unknown
+        level?: unknown
+        message?: unknown
+        detail?: unknown
+      }
       if (payload.source !== 'chat-web-agent-preview') return
       const frameWindow = iframeRef.current?.contentWindow
       if (payload.type === 'storage-request' && frameWindow && workspace) {
-        void repository.getPreviewStorage(workspace.id).then(data => {
-          frameWindow.postMessage({ source: 'chat-web-agent-host', type: 'storage-snapshot', data }, '*')
+        void repository.getPreviewStorage(workspace.id).then((data) => {
+          frameWindow.postMessage(
+            { source: 'chat-web-agent-host', type: 'storage-snapshot', data },
+            '*',
+          )
         })
         return
       }
       if (payload.type === 'storage-set' && workspace) {
         const data = (payload as { data?: unknown }).data
-        if (data && typeof data === 'object') void repository.savePreviewStorage(workspace.id, data as Record<string, string>)
+        if (data && typeof data === 'object')
+          void repository.savePreviewStorage(workspace.id, data as Record<string, string>)
         return
       }
       if (payload.type !== 'diagnostic') return
-      const level = typeof payload.level === 'string' && (payload.level === 'info' || payload.level === 'warn' || payload.level === 'error') ? payload.level : 'info'
-      setPreviewDiagnostics(current => [...current.slice(-19), {
-        level,
-        message: typeof payload.message === 'string' ? payload.message : 'Preview diagnostic',
-        detail: typeof payload.detail === 'string' ? payload.detail : undefined,
-      }])
+      const level =
+        typeof payload.level === 'string' &&
+        (payload.level === 'info' || payload.level === 'warn' || payload.level === 'error')
+          ? payload.level
+          : 'info'
+      setPreviewDiagnostics((current) => [
+        ...current.slice(-19),
+        {
+          level,
+          message: typeof payload.message === 'string' ? payload.message : 'Preview diagnostic',
+          detail: typeof payload.detail === 'string' ? payload.detail : undefined,
+        },
+      ])
     }
     window.addEventListener('message', onMessage)
     return () => window.removeEventListener('message', onMessage)
@@ -203,35 +278,59 @@ export default function App() {
     setPreviewDiagnostics([])
   }, [artifact.srcdoc])
 
-  const handleEvent = useCallback(async (event: AgentEventRecord) => {
-    setEvents(current => current.some(item => item.id === event.id) ? current : [...current, event])
-    if (!workspace) return
-    if (event.type === 'user_message' || event.type === 'assistant_message' || event.type === 'tool_call' || event.type === 'tool_result') {
-      const nextMessages = await repository.listMessages(sessionRef.current || session?.id || '')
-      setMessages(nextMessages)
-    }
-    if (event.type === 'assistant_message' || event.type === 'tool_call' || event.type === 'turn_end') {
-      setStreamDraft('')
-    }
-    if (event.type === 'turn_title') {
-      const sessionId = sessionRef.current || session?.id || ''
-      const [nextSession, nextSessions] = await Promise.all([
-        repository.getSession(sessionId),
-        repository.listSessions(workspace.id),
-      ])
-      if (nextSession) setSession(nextSession)
-      setSessions(nextSessions)
-    }
-    if (event.type === 'workspace_mutation' || event.type === 'tool_result') {
-      const nextFiles = await repository.listFiles(workspace.id)
-      setFiles(nextFiles)
-    }
-  }, [session?.id, workspace])
+  const handleEvent = useCallback(
+    async (event: AgentEventRecord) => {
+      setEvents((current) =>
+        current.some((item) => item.id === event.id) ? current : [...current, event],
+      )
+      if (!workspace) return
+      if (
+        event.type === 'user_message' ||
+        event.type === 'assistant_message' ||
+        event.type === 'tool_call' ||
+        event.type === 'tool_result'
+      ) {
+        const nextMessages = await repository.listMessages(sessionRef.current || session?.id || '')
+        setMessages(nextMessages)
+      }
+      if (
+        event.type === 'assistant_message' ||
+        event.type === 'tool_call' ||
+        event.type === 'turn_end'
+      ) {
+        setStreamDraft('')
+      }
+      if (event.type === 'turn_title') {
+        const sessionId = sessionRef.current || session?.id || ''
+        const [nextSession, nextSessions] = await Promise.all([
+          repository.getSession(sessionId),
+          repository.listSessions(workspace.id),
+        ])
+        if (nextSession) setSession(nextSession)
+        setSessions(nextSessions)
+      }
+      if (event.type === 'workspace_mutation' || event.type === 'tool_result') {
+        const nextFiles = await repository.listFiles(workspace.id)
+        setFiles(nextFiles)
+      }
+    },
+    [session?.id, workspace],
+  )
 
   const handleSend = useCallback(async () => {
     const text = inputValue.trim()
-    if (!text || !workspace || !session || session.archivedAt || !settings || running) return
+    const attachments = inputAttachments
+    if (
+      (!text && attachments.length === 0) ||
+      !workspace ||
+      !session ||
+      session.archivedAt ||
+      !settings ||
+      running
+    )
+      return
     setInputValue('')
+    setInputAttachments([])
     setError('')
     setStreamDraft('')
     const optimisticMessage: ChatMessageRecord = {
@@ -239,10 +338,11 @@ export default function App() {
       sessionId: session.id,
       role: 'user',
       content: text,
+      ...(attachments.length ? { attachments } : {}),
       createdAt: Date.now(),
       status: 'streaming',
     }
-    setMessages(current => [...current, optimisticMessage])
+    setMessages((current) => [...current, optimisticMessage])
     setRunning(true)
     const controller = new AbortController()
     abortRef.current = controller
@@ -254,9 +354,10 @@ export default function App() {
         sessionId: session.id,
         settings,
         text,
+        attachments,
         signal: controller.signal,
         onEvent: handleEvent,
-        onDelta: delta => setStreamDraft(current => current + delta),
+        onDelta: (delta) => setStreamDraft((current) => current + delta),
       })
       setStreamDraft('')
       if (sessionRef.current === session.id) {
@@ -265,23 +366,30 @@ export default function App() {
         if (nextWorkspace) setWorkspace(nextWorkspace)
       }
     } catch (cause) {
-      if (!(cause instanceof DOMException && cause.name === 'AbortError')) setError(cause instanceof Error ? cause.message : String(cause))
+      if (!(cause instanceof DOMException && cause.name === 'AbortError'))
+        setError(cause instanceof Error ? cause.message : String(cause))
       if (sessionRef.current === session.id) await reload(workspace.id, session.id)
     } finally {
       setStreamDraft('')
       abortRef.current = undefined
       setRunning(false)
     }
-  }, [handleEvent, inputValue, reload, running, session, settings, workspace])
+  }, [handleEvent, inputAttachments, inputValue, reload, running, session, settings, workspace])
 
   const handleNewWorkspace = useCallback(async () => {
     const title = window.prompt('工作区名称', '新建网页工作区')?.trim()
     if (!title) return
     const nextWorkspace = await repository.createWorkspace(title)
-    await repository.writeFile(nextWorkspace.id, 'index.html', '<!doctype html><html><head><meta charset="UTF-8"><title>New page</title></head><body><main><h1>New page</h1></main></body></html>')
+    await repository.writeFile(
+      nextWorkspace.id,
+      'index.html',
+      '<!doctype html><html><head><meta charset="UTF-8"><title>New page</title></head><body><main><h1>New page</h1></main></body></html>',
+    )
     const nextSession = await repository.createSession(nextWorkspace.id)
     setWorkspace(nextWorkspace)
     setSession(nextSession)
+    setInputValue('')
+    setInputAttachments([])
     sessionRef.current = nextSession.id
     setWorkspaces(await repository.listWorkspaces())
     await reload(nextWorkspace.id, nextSession.id)
@@ -294,145 +402,196 @@ export default function App() {
     sessionRef.current = nextSession.id
     setMessages([])
     setEvents([])
+    setInputValue('')
+    setInputAttachments([])
     setStreamDraft('')
     setSessions(await repository.listSessions(workspace.id))
   }, [settings, workspace])
 
-  const handleSwitchSession = useCallback(async (sessionId: string) => {
-    if (!workspace) return
-    const nextSession = await repository.getSession(sessionId)
-    if (!nextSession) return
-    setSession(nextSession)
-    sessionRef.current = nextSession.id
-    setStreamDraft('')
-    setRunning(false)
-    const [nextMessages, nextEvents] = await Promise.all([
-      repository.listMessages(nextSession.id),
-      repository.listEvents(nextSession.id),
-    ])
-    setMessages(nextMessages)
-    setEvents(nextEvents)
-    setSessions(await repository.listSessions(workspace.id))
-  }, [workspace])
-
-  const handleDeleteSession = useCallback(async (sessionId: string) => {
-    if (!workspace) return
-    if (!window.confirm('确定永久删除这段会话及其消息、工具记录吗？此操作不可撤销。')) return
-    try {
-      await repository.deleteSession(sessionId)
-      const nextSessions = await repository.listSessions(workspace.id)
-      let nextSession = session?.id === sessionId ? nextSessions.find(item => !item.archivedAt) : session
-      if (!nextSession) nextSession = await repository.createSession(workspace.id)
+  const handleSwitchSession = useCallback(
+    async (sessionId: string) => {
+      if (!workspace) return
+      const nextSession = await repository.getSession(sessionId)
+      if (!nextSession) return
       setSession(nextSession)
       sessionRef.current = nextSession.id
-      await reload(workspace.id, nextSession.id)
-    } catch (cause) {
-      setError(cause instanceof Error ? cause.message : String(cause))
-    }
-  }, [reload, session, workspace])
+      setStreamDraft('')
+      setInputValue('')
+      setInputAttachments([])
+      setRunning(false)
+      const [nextMessages, nextEvents] = await Promise.all([
+        repository.listMessages(nextSession.id),
+        repository.listEvents(nextSession.id),
+      ])
+      setMessages(nextMessages)
+      setEvents(nextEvents)
+      setSessions(await repository.listSessions(workspace.id))
+    },
+    [workspace],
+  )
 
-  const handleArchiveSession = useCallback(async (sessionId: string, archived: boolean) => {
-    if (!workspace) return
-    try {
-      await repository.setSessionArchived(sessionId, archived)
-      const nextSessions = await repository.listSessions(workspace.id)
-      if (session?.id === sessionId && archived) {
-        const nextSession = nextSessions.find(item => item.id !== sessionId && !item.archivedAt) ?? await repository.createSession(workspace.id)
+  const handleDeleteSession = useCallback(
+    async (sessionId: string) => {
+      if (!workspace) return
+      if (!window.confirm('确定永久删除这段会话及其消息、工具记录吗？此操作不可撤销。')) return
+      try {
+        await repository.deleteSession(sessionId)
+        const nextSessions = await repository.listSessions(workspace.id)
+        let nextSession =
+          session?.id === sessionId ? nextSessions.find((item) => !item.archivedAt) : session
+        if (!nextSession) nextSession = await repository.createSession(workspace.id)
         setSession(nextSession)
         sessionRef.current = nextSession.id
         await reload(workspace.id, nextSession.id)
-      } else {
-        const restoredSession = nextSessions.find(item => item.id === sessionId)
-        if (session?.id === sessionId && restoredSession) setSession(restoredSession)
-        setSessions(nextSessions)
+      } catch (cause) {
+        setError(cause instanceof Error ? cause.message : String(cause))
       }
-    } catch (cause) {
-      setError(cause instanceof Error ? cause.message : String(cause))
-    }
-  }, [reload, session?.id, workspace])
+    },
+    [reload, session, workspace],
+  )
 
-  const handleSwitchWorkspace = useCallback(async (workspaceId: string) => {
-    const nextWorkspace = await repository.getWorkspace(workspaceId)
-    if (!nextWorkspace) return
-    const nextSession = await repository.getOrCreateSession(workspaceId)
-    setWorkspace(nextWorkspace)
-    setSession(nextSession)
-    sessionRef.current = nextSession.id
-    setSelectedPath(nextWorkspace.entryPath)
-    if (narrowLayout) {
-      setSidebarCollapsed(true)
-      setInspectorCollapsed(true)
-    } else {
-      setInspectorCollapsed(false)
-    }
-    await reload(nextWorkspace.id, nextSession.id)
-  }, [narrowLayout, reload])
+  const handleArchiveSession = useCallback(
+    async (sessionId: string, archived: boolean) => {
+      if (!workspace) return
+      try {
+        await repository.setSessionArchived(sessionId, archived)
+        const nextSessions = await repository.listSessions(workspace.id)
+        if (session?.id === sessionId && archived) {
+          const nextSession =
+            nextSessions.find((item) => item.id !== sessionId && !item.archivedAt) ??
+            (await repository.createSession(workspace.id))
+          setSession(nextSession)
+          sessionRef.current = nextSession.id
+          await reload(workspace.id, nextSession.id)
+        } else {
+          const restoredSession = nextSessions.find((item) => item.id === sessionId)
+          if (session?.id === sessionId && restoredSession) setSession(restoredSession)
+          setSessions(nextSessions)
+        }
+      } catch (cause) {
+        setError(cause instanceof Error ? cause.message : String(cause))
+      }
+    },
+    [reload, session?.id, workspace],
+  )
 
-  const handleImportWorkspace = useCallback(async (file: File) => {
-    if (!session || !settings) return
-    setError('')
-    try {
-      const imported = await parseWorkspaceZip(file)
-      const nextWorkspace = await repository.createWorkspace(imported.title)
-      for (const item of imported.files) await repository.writeFile(nextWorkspace.id, item.path, item.content)
-      await repository.setEntryPath(nextWorkspace.id, imported.entryPath)
-      const nextSession = await repository.createSession(nextWorkspace.id)
+  const handleSwitchWorkspace = useCallback(
+    async (workspaceId: string) => {
+      const nextWorkspace = await repository.getWorkspace(workspaceId)
+      if (!nextWorkspace) return
+      const nextSession = await repository.getOrCreateSession(workspaceId)
       setWorkspace(nextWorkspace)
       setSession(nextSession)
+      setInputValue('')
+      setInputAttachments([])
       sessionRef.current = nextSession.id
-      setSelectedPath(imported.entryPath)
-      setWorkspaces(await repository.listWorkspaces())
+      setSelectedPath(nextWorkspace.entryPath)
+      if (narrowLayout) {
+        setSidebarCollapsed(true)
+        setInspectorCollapsed(true)
+      } else {
+        setInspectorCollapsed(false)
+      }
       await reload(nextWorkspace.id, nextSession.id)
-    } catch (cause) {
-      setError(cause instanceof Error ? cause.message : String(cause))
-    }
-  }, [reload, session, settings])
+    },
+    [narrowLayout, reload],
+  )
 
-  const handleDeleteWorkspace = useCallback(async (workspaceId: string) => {
-    if (!session || !settings) return
-    if (!window.confirm('确定删除该工作区及其本地文件、版本记录和会话吗？此操作不可撤销。')) return
-    try {
-      await repository.deleteWorkspace(workspaceId)
-      setWorkspaces(await repository.listWorkspaces())
-      if (workspace?.id === workspaceId) {
-        const nextWorkspace = await repository.ensureWorkspace()
-        const nextSession = await repository.getOrCreateSession(nextWorkspace.id)
+  const handleImportWorkspace = useCallback(
+    async (file: File) => {
+      if (!session || !settings) return
+      setError('')
+      try {
+        const imported = await parseWorkspaceZip(file)
+        const nextWorkspace = await repository.createWorkspace(imported.title)
+        for (const item of imported.files)
+          await repository.writeFile(nextWorkspace.id, item.path, item.content)
+        await repository.setEntryPath(nextWorkspace.id, imported.entryPath)
+        const nextSession = await repository.createSession(nextWorkspace.id)
         setWorkspace(nextWorkspace)
         setSession(nextSession)
+        setInputValue('')
+        setInputAttachments([])
         sessionRef.current = nextSession.id
-        setSelectedPath(nextWorkspace.entryPath)
+        setSelectedPath(imported.entryPath)
+        setWorkspaces(await repository.listWorkspaces())
         await reload(nextWorkspace.id, nextSession.id)
+      } catch (cause) {
+        setError(cause instanceof Error ? cause.message : String(cause))
       }
-    } catch (cause) {
-      setError(cause instanceof Error ? cause.message : String(cause))
-    }
-  }, [reload, session, settings, workspace?.id])
+    },
+    [reload, session, settings],
+  )
 
-  const handleSettingsSave = useCallback(async (nextSettings: AgentSettings, nextPermissions: PreviewPermissions) => {
-    await repository.saveSettings(nextSettings)
-    await repository.savePreviewPermissions(nextPermissions)
-    setSettings(nextSettings)
-    setPreviewPermissions(nextPermissions)
-    setSettingsOpen(false)
-  }, [])
+  const handleDeleteWorkspace = useCallback(
+    async (workspaceId: string) => {
+      if (!session || !settings) return
+      if (!window.confirm('确定删除该工作区及其本地文件、版本记录和会话吗？此操作不可撤销。'))
+        return
+      try {
+        await repository.deleteWorkspace(workspaceId)
+        setWorkspaces(await repository.listWorkspaces())
+        if (workspace?.id === workspaceId) {
+          const nextWorkspace = await repository.ensureWorkspace()
+          const nextSession = await repository.getOrCreateSession(nextWorkspace.id)
+          setWorkspace(nextWorkspace)
+          setSession(nextSession)
+          sessionRef.current = nextSession.id
+          setSelectedPath(nextWorkspace.entryPath)
+          await reload(nextWorkspace.id, nextSession.id)
+        }
+      } catch (cause) {
+        setError(cause instanceof Error ? cause.message : String(cause))
+      }
+    },
+    [reload, session, settings, workspace?.id],
+  )
 
-  const handleSourceSave = useCallback(async (file: WorkspaceFile, content: string) => {
-    if (!workspace) throw new Error('工作区已关闭')
-    await repository.writeFile(workspace.id, file.path, content, file.revision)
-    const nextFiles = await repository.listFiles(workspace.id)
-    setFiles(nextFiles)
-  }, [workspace])
+  const handleSettingsSave = useCallback(
+    async (nextSettings: AgentSettings, nextPermissions: PreviewPermissions) => {
+      await repository.saveSettings(nextSettings)
+      await repository.savePreviewPermissions(nextPermissions)
+      setSettings(nextSettings)
+      setPreviewPermissions(nextPermissions)
+      setSettingsOpen(false)
+    },
+    [],
+  )
 
-  if (loading) return <div className="loading-screen"><LoaderCircle className="spin" size={20} /><span>正在加载浏览器工作台</span></div>
-  if (error && !workspace) return <div className="loading-screen error-screen"><AlertTriangle size={20} /><span>{error}</span></div>
+  const handleSourceSave = useCallback(
+    async (file: WorkspaceFile, content: string) => {
+      if (!workspace) throw new Error('工作区已关闭')
+      await repository.writeFile(workspace.id, file.path, content, file.revision)
+      const nextFiles = await repository.listFiles(workspace.id)
+      setFiles(nextFiles)
+    },
+    [workspace],
+  )
+
+  if (loading)
+    return (
+      <div className="loading-screen">
+        <LoaderCircle className="spin" size={20} />
+        <span>正在加载浏览器工作台</span>
+      </div>
+    )
+  if (error && !workspace)
+    return (
+      <div className="loading-screen error-screen">
+        <AlertTriangle size={20} />
+        <span>{error}</span>
+      </div>
+    )
   if (!workspace || !session || !settings || !previewPermissions) return null
 
   return (
     <div className="app-shell">
       <header className="topbar">
         <div className="brand">
-          <span className="brand-mark"><Bot size={17} /></span>
-          <span className="brand-name">Web chat</span>
+          <span className="brand-mark">
+            <Bot size={17} />
+          </span>
+          <span className="brand-name">Web Chat</span>
           <span className="brand-divider">/</span>
           <span className="brand-product">Browser Agent</span>
         </div>
@@ -442,13 +601,38 @@ export default function App() {
           <span className="local-badge">本地</span>
         </div>
         <div className="topbar-actions">
-          <button className="icon-button" title="导出工作区为 ZIP" onClick={() => downloadWorkspaceZip(workspace, files)}><Download size={16} /></button>
-          <button className="icon-button" title="打开设置" onClick={() => setSettingsOpen(true)}><Settings2 size={16} /></button>
+          <button
+            className="icon-button"
+            title="导出工作区为 ZIP"
+            onClick={() => downloadWorkspaceZip(workspace, files)}
+          >
+            <Download size={16} />
+          </button>
+          <button className="icon-button" title="打开设置" onClick={() => setSettingsOpen(true)}>
+            <Settings2 size={16} />
+          </button>
         </div>
       </header>
 
-      <main className={'workbench' + (sidebarCollapsed ? ' sidebar-collapsed' : ' sidebar-open') + (inspectorCollapsed ? ' inspector-collapsed' : ' inspector-open') + (narrowLayout ? ' narrow-layout' : '')} style={{ '--inspector-width': `${inspectorWidth}px` } as CSSProperties}>
-        {narrowLayout && (!sidebarCollapsed || !inspectorCollapsed) && <button className="mobile-backdrop" aria-label="关闭侧栏" onClick={() => { setSidebarCollapsed(true); setInspectorCollapsed(true) }} />}
+      <main
+        className={
+          'workbench' +
+          (sidebarCollapsed ? ' sidebar-collapsed' : ' sidebar-open') +
+          (inspectorCollapsed ? ' inspector-collapsed' : ' inspector-open') +
+          (narrowLayout ? ' narrow-layout' : '')
+        }
+        style={{ '--inspector-width': `${inspectorWidth}px` } as CSSProperties}
+      >
+        {narrowLayout && (!sidebarCollapsed || !inspectorCollapsed) && (
+          <button
+            className="mobile-backdrop"
+            aria-label="关闭侧栏"
+            onClick={() => {
+              setSidebarCollapsed(true)
+              setInspectorCollapsed(true)
+            }}
+          />
+        )}
 
         <Sidebar
           workspace={workspace}
@@ -458,17 +642,34 @@ export default function App() {
           pickerRef={workspacePickerRef}
           sessionSections={
             <>
-              <SessionList sessions={sessions.filter(item => !item.archivedAt)} activeSessionId={session.id} onSelect={handleSwitchSession} onArchive={id => void handleArchiveSession(id, true)} onDelete={handleDeleteSession} />
-              {sessions.some(item => item.archivedAt) && <>
-                <div className="section-label archived-label"><span>已归档</span></div>
-                <SessionList sessions={sessions.filter(item => item.archivedAt)} activeSessionId={session.id} onSelect={handleSwitchSession} onArchive={id => void handleArchiveSession(id, false)} onDelete={handleDeleteSession} archived />
-              </>}
+              <SessionList
+                sessions={sessions.filter((item) => !item.archivedAt)}
+                activeSessionId={session.id}
+                onSelect={handleSwitchSession}
+                onArchive={(id) => void handleArchiveSession(id, true)}
+                onDelete={handleDeleteSession}
+              />
+              {sessions.some((item) => item.archivedAt) && (
+                <>
+                  <div className="section-label archived-label">
+                    <span>已归档</span>
+                  </div>
+                  <SessionList
+                    sessions={sessions.filter((item) => item.archivedAt)}
+                    activeSessionId={session.id}
+                    onSelect={handleSwitchSession}
+                    onArchive={(id) => void handleArchiveSession(id, false)}
+                    onDelete={handleDeleteSession}
+                    archived
+                  />
+                </>
+              )}
             </>
           }
-          onToggleWorkspaceMenu={() => setWorkspaceMenuOpen(current => !current)}
-          onSelectWorkspace={id => void handleSwitchWorkspace(id)}
+          onToggleWorkspaceMenu={() => setWorkspaceMenuOpen((current) => !current)}
+          onSelectWorkspace={(id) => void handleSwitchWorkspace(id)}
           onNewWorkspace={() => void handleNewWorkspace()}
-          onImportWorkspace={file => void handleImportWorkspace(file)}
+          onImportWorkspace={(file) => void handleImportWorkspace(file)}
           onDeleteWorkspace={() => void handleDeleteWorkspace(workspace.id)}
           onNewSession={() => void handleNewSession()}
           onOpenSettings={() => setSettingsOpen(true)}
@@ -479,62 +680,193 @@ export default function App() {
         <section className="conversation-panel">
           <div className="panel-heading conversation-heading">
             <div className="conversation-title-block">
-              {sidebarCollapsed && <button className="sidebar-toggle conversation-sidebar-open" title="展开侧栏" onClick={openSidebar}><PanelLeftOpen size={15} /></button>}
-              <div><span className="eyebrow">会话</span><h1>{session.title}</h1></div>
+              {sidebarCollapsed && (
+                <button
+                  className="sidebar-toggle conversation-sidebar-open"
+                  title="展开侧栏"
+                  onClick={openSidebar}
+                >
+                  <PanelLeftOpen size={15} />
+                </button>
+              )}
+              <div>
+                <span className="eyebrow">会话</span>
+                <h1>{session.title}</h1>
+              </div>
             </div>
             <div className="heading-actions">
-              <button className="icon-button" title="新建会话" onClick={() => void handleNewSession()}><Plus size={15} /></button>
-              <div className="model-chip"><span className="mode-dot" />{settings.model}</div>
-              {inspectorCollapsed && <button className="inspector-toggle conversation-inspector-open" title="展开检查器" onClick={openInspector}><PanelRightOpen size={15} /></button>}
+              <button
+                className="icon-button"
+                title="新建会话"
+                onClick={() => void handleNewSession()}
+              >
+                <Plus size={15} />
+              </button>
+              <div className="model-chip">
+                <span className="mode-dot" />
+                {settings.model}
+              </div>
+              {inspectorCollapsed && (
+                <button
+                  className="inspector-toggle conversation-inspector-open"
+                  title="展开检查器"
+                  onClick={openInspector}
+                >
+                  <PanelRightOpen size={15} />
+                </button>
+              )}
             </div>
           </div>
           <div className="message-scroll" ref={messageScrollRef}>
             {messages.length === 0 && !running && <EmptyConversation onPrompt={setInputValue} />}
-            {messages.map(message => <MessageView key={message.id} message={message} events={events} />)}
+            {messages.map((message) => (
+              <MessageView key={message.id} message={message} events={events} />
+            ))}
             {running && <TurnStatus />}
-            {streamDraft && <div className="assistant-block streaming-draft"><div className="assistant-copy"><span className="stream-text">{streamDraft}</span><span className="stream-caret" /></div></div>}
-            {error && <div className="inline-error"><AlertTriangle size={15} /><span>{error}</span><button className="icon-button tiny" title="关闭错误提示" onClick={() => setError('')}><X size={14} /></button></div>}
+            {streamDraft && (
+              <div className="assistant-block streaming-draft">
+                <div className="assistant-copy">
+                  <MarkdownRenderer source={streamDraft} />
+                  <span className="stream-caret" />
+                </div>
+              </div>
+            )}
+            {error && (
+              <div className="inline-error">
+                <AlertTriangle size={15} />
+                <span>{error}</span>
+                <button
+                  className="icon-button tiny"
+                  title="关闭错误提示"
+                  onClick={() => setError('')}
+                >
+                  <X size={14} />
+                </button>
+              </div>
+            )}
           </div>
           <Composer
             value={inputValue}
+            attachments={inputAttachments}
+            multimodal={settings.supportsMultimodal}
             running={running}
             disabled={running || !!session.archivedAt}
-            placeholder={session.archivedAt ? '该会话已归档，恢复后可以继续对话' : '让 Agent 修改页面，或检查虚拟工作台...（Enter 发送，Shift+Enter 换行）'}
+            placeholder={
+              session.archivedAt
+                ? '该会话已归档，恢复后可以继续对话'
+                : '让 Agent 修改页面，或检查虚拟工作台...（Enter 发送，Shift+Enter 换行）'
+            }
             onChange={setInputValue}
+            onAttachmentsChange={setInputAttachments}
             onSend={() => void handleSend()}
             onStop={() => abortRef.current?.abort()}
           />
         </section>
 
-        <aside className="inspector-panel" style={narrowLayout ? {
-          display: 'grid',
-          pointerEvents: inspectorCollapsed ? 'none' : 'auto',
-          transform: inspectorCollapsed ? 'translateX(105%)' : 'translateX(0)',
-          zIndex: 100,
-        } : undefined}>
-          <div className="inspector-resize-handle" role="separator" aria-label="调整检查器宽度" onPointerDown={startInspectorResize} />
+        <aside
+          className="inspector-panel"
+          style={
+            narrowLayout
+              ? {
+                  display: 'grid',
+                  pointerEvents: inspectorCollapsed ? 'none' : 'auto',
+                  transform: inspectorCollapsed ? 'translateX(105%)' : 'translateX(0)',
+                  zIndex: 100,
+                }
+              : undefined
+          }
+        >
+          <div
+            className="inspector-resize-handle"
+            role="separator"
+            aria-label="调整检查器宽度"
+            onPointerDown={startInspectorResize}
+          />
           <div className="inspector-sidebar-heading">
-            <button className="inspector-sidebar-collapse" title="折叠检查器" onClick={() => setInspectorCollapsed(true)}><PanelRightClose size={15} /></button>
+            <button
+              className="inspector-sidebar-collapse"
+              title="折叠检查器"
+              onClick={() => setInspectorCollapsed(true)}
+            >
+              <PanelRightClose size={15} />
+            </button>
             <span className="section-label">检查器</span>
           </div>
           <div className="inspector-tabs" role="tablist">
-            <button className={inspectorTab === 'preview' ? 'active' : ''} onClick={() => setInspectorTab('preview')}><Eye size={15} />预览</button>
-            <button className={inspectorTab === 'source' ? 'active' : ''} onClick={() => setInspectorTab('source')}><Code2 size={15} />源码</button>
-            <button className={inspectorTab === 'problems' ? 'active' : ''} onClick={() => setInspectorTab('problems')}><AlertTriangle size={15} />问题{diagnostics.length > 0 && <span className="tab-count">{diagnostics.length}</span>}</button>
-            <button className={inspectorTab === 'diff' ? 'active' : ''} onClick={() => setInspectorTab('diff')}><GitCompare size={15} />差异</button>
+            <button
+              className={inspectorTab === 'preview' ? 'active' : ''}
+              onClick={() => setInspectorTab('preview')}
+            >
+              <Eye size={15} />
+              预览
+            </button>
+            <button
+              className={inspectorTab === 'source' ? 'active' : ''}
+              onClick={() => setInspectorTab('source')}
+            >
+              <Code2 size={15} />
+              源码
+            </button>
+            <button
+              className={inspectorTab === 'problems' ? 'active' : ''}
+              onClick={() => setInspectorTab('problems')}
+            >
+              <AlertTriangle size={15} />
+              问题
+              {diagnostics.length > 0 && <span className="tab-count">{diagnostics.length}</span>}
+            </button>
+            <button
+              className={inspectorTab === 'diff' ? 'active' : ''}
+              onClick={() => setInspectorTab('diff')}
+            >
+              <GitCompare size={15} />
+              差异
+            </button>
           </div>
           {!inspectorCollapsed && (
             <>
-              {inspectorTab === 'preview' && previewPermissions && <PreviewPanel artifact={artifact} iframeRef={iframeRef} previewKey={previewKey} sandbox={buildPreviewSandbox(previewPermissions)} allow={buildPreviewAllowAttribute(previewPermissions)} onRefresh={() => setPreviewDiagnostics([])} onReset={() => setPreviewKey(current => current + 1)} onDownload={() => { const entry = files.find(file => file.path === (workspace.entryPath || 'index.html')) ?? files.find(file => file.kind === 'html'); if (entry) downloadFile(entry) }} />}
-              {inspectorTab === 'source' && <SourcePanel file={selectedFile} files={files} onSelectFile={setSelectedPath} onSave={handleSourceSave} />}
+              {inspectorTab === 'preview' && previewPermissions && (
+                <PreviewPanel
+                  artifact={artifact}
+                  iframeRef={iframeRef}
+                  previewKey={previewKey}
+                  sandbox={buildPreviewSandbox(previewPermissions)}
+                  allow={buildPreviewAllowAttribute(previewPermissions)}
+                  onRefresh={() => setPreviewDiagnostics([])}
+                  onReset={() => setPreviewKey((current) => current + 1)}
+                  onDownload={() => {
+                    const entry =
+                      files.find((file) => file.path === (workspace.entryPath || 'index.html')) ??
+                      files.find((file) => file.kind === 'html')
+                    if (entry) downloadFile(entry)
+                  }}
+                />
+              )}
+              {inspectorTab === 'source' && (
+                <SourcePanel
+                  file={selectedFile}
+                  files={files}
+                  onSelectFile={setSelectedPath}
+                  onSave={handleSourceSave}
+                />
+              )}
               {inspectorTab === 'problems' && <ProblemsPanel diagnostics={diagnostics} />}
-              {inspectorTab === 'diff' && <DiffPanel file={selectedFile} revisions={revisionHistory} />}
+              {inspectorTab === 'diff' && (
+                <DiffPanel file={selectedFile} revisions={revisionHistory} />
+              )}
             </>
           )}
         </aside>
       </main>
 
-      {settingsOpen && <SettingsModal value={settings} permissions={previewPermissions} onClose={() => setSettingsOpen(false)} onSave={(next, nextPermissions) => void handleSettingsSave(next, nextPermissions)} />}
+      {settingsOpen && (
+        <SettingsModal
+          value={settings}
+          permissions={previewPermissions}
+          onClose={() => setSettingsOpen(false)}
+          onSave={(next, nextPermissions) => void handleSettingsSave(next, nextPermissions)}
+        />
+      )}
     </div>
   )
 }

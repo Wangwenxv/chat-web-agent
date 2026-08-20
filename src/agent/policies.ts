@@ -6,7 +6,7 @@ export interface PublishCheck {
   segments: string[]
 }
 
-export function beforePublish(content: string, segment: boolean): PublishCheck {
+export function beforePublish(content: string): PublishCheck {
   const trimmed = content.trim()
   const issues: string[] = []
   if (!trimmed) issues.push('The model returned an empty response')

@@ -33,7 +33,11 @@ export function normalizeWorkspacePath(input: string): string | null {
   return joined.length > 0 ? joined : null
 }
 
-export function fileMetaFromPath(path: string): { kind: FileKind; language: string; previewable: boolean } {
+export function fileMetaFromPath(path: string): {
+  kind: FileKind
+  language: string
+  previewable: boolean
+} {
   const match = /\.[^.]+$/.exec(path.toLowerCase())
   if (match !== null) {
     const meta = EXTENSION_KIND[match[0]]
@@ -55,7 +59,7 @@ export function dirname(path: string): string {
 
 export function joinPath(...parts: string[]): string {
   return parts
-    .map(part => part.replaceAll('\\', '/'))
+    .map((part) => part.replaceAll('\\', '/'))
     .filter(Boolean)
     .join('/')
     .replaceAll(/\/+/g, '/')

@@ -1,24 +1,44 @@
 import { useEffect, useRef, useState } from 'react'
 import { AlertTriangle, Bot, Check, ChevronDown, Copy, Wrench } from 'lucide-react'
-import type { AgentEventRecord, ChatMessageRecord, ToolCallRequest, ToolExecutionResult } from '../../types'
-import { segmentSentences } from '../../lib/segment'
+import type {
+  AgentEventRecord,
+  ChatMessageRecord,
+  ToolCallRequest,
+  ToolExecutionResult,
+} from '../../types'
 import { getToolCallSummary } from '../../agent/runner'
+import { MarkdownRenderer } from './MarkdownRenderer'
 
-export function MessageView({ message, events }: { message: ChatMessageRecord; events: AgentEventRecord[] }) {
+export function MessageView({
+  message,
+  events,
+}: {
+  message: ChatMessageRecord
+  events: AgentEventRecord[]
+}) {
   if (message.role === 'tool') return null
   if (message.role === 'user') return <UserMessageView message={message} />
   if (message.toolCalls?.length) {
     return (
       <div className="assistant-block">
-        {message.content && <div className="assistant-copy">{message.content}</div>}
-        <div className="tool-stack">{message.toolCalls.map(call => <ToolCard key={call.id} call={call} events={events} />)}</div>
+        {message.content && (
+          <div className="assistant-copy">
+            <MarkdownRenderer source={message.content} />
+          </div>
+        )}
+        <div className="tool-stack">
+          {message.toolCalls.map((call) => (
+            <ToolCard key={call.id} call={call} events={events} />
+          ))}
+        </div>
       </div>
     )
   }
-  const segments = segmentSentences(message.content)
   return (
     <div className="assistant-block final-answer">
-      <div className="assistant-copy">{segments.map((segment, index) => <p className="answer-segment" style={{ animationDelay: index * 45 + 'ms' }} key={segment + index}>{segment}</p>)}</div>
+      <div className="assistant-copy">
+        <MarkdownRenderer source={message.content} />
+      </div>
       <MessageChrome text={message.content} time={message.createdAt} />
     </div>
   )
@@ -28,29 +48,65 @@ function UserMessageView({ message }: { message: ChatMessageRecord }) {
   return (
     <div className="message-row user-row" data-time-hover-root>
       <div className="user-stack">
-        <div className="user-bubble">{message.content}</div>
+        <div className="user-bubble">
+          <MarkdownRenderer source={message.content} />
+          {message.attachments?.length ? (
+            <div className="message-attachments">
+              {message.attachments.map((attachment) =>
+                attachment.mimeType.startsWith('image/') ? (
+                  <img key={attachment.id} src={attachment.dataUrl} alt={attachment.name} />
+                ) : (
+                  <span key={attachment.id}>{attachment.name}</span>
+                ),
+              )}
+            </div>
+          ) : null}
+        </div>
         <MessageChrome text={message.content} time={message.createdAt} clock="start" />
       </div>
     </div>
   )
 }
 
-function MessageChrome({ text, time, clock = 'end' }: { text: string; time?: number; clock?: 'start' | 'end' }) {
+function MessageChrome({
+  text,
+  time,
+  clock = 'end',
+}: {
+  text: string
+  time?: number
+  clock?: 'start' | 'end'
+}) {
   const [copied, setCopied] = useState(false)
   const timerRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined)
   useEffect(() => () => clearTimeout(timerRef.current), [])
   const handleCopy = () => {
     if (copied) return
-    void navigator.clipboard.writeText(text).then(() => {
-      setCopied(true)
-      timerRef.current = setTimeout(() => setCopied(false), 1000)
-    }).catch(() => undefined)
+    void navigator.clipboard
+      .writeText(text)
+      .then(() => {
+        setCopied(true)
+        timerRef.current = setTimeout(() => setCopied(false), 1000)
+      })
+      .catch(() => undefined)
   }
-  const clockEl = time === undefined ? null : <span className={clock === 'start' ? 'msg-clock start' : 'msg-clock'}>{formatMessageClock(time)}</span>
+  const clockEl =
+    time === undefined ? null : (
+      <span className={clock === 'start' ? 'msg-clock start' : 'msg-clock'}>
+        {formatMessageClock(time)}
+      </span>
+    )
   return (
     <div className="msg-chrome">
       {clock === 'start' && clockEl}
-      <button className="msg-action" title="复制" aria-label="复制" onClick={() => void handleCopy()}>{copied ? <Check size={14} /> : <Copy size={14} />}</button>
+      <button
+        className="msg-action"
+        title="复制"
+        aria-label="复制"
+        onClick={() => void handleCopy()}
+      >
+        {copied ? <Check size={14} /> : <Copy size={14} />}
+      </button>
       {clock === 'end' && clockEl}
     </div>
   )
@@ -60,20 +116,34 @@ function formatMessageClock(time: number): string {
   const d = new Date(time)
   const now = new Date()
   const clock = `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`
-  if (d.getFullYear() === now.getFullYear() && d.getMonth() === now.getMonth() && d.getDate() === now.getDate()) return clock
+  if (
+    d.getFullYear() === now.getFullYear() &&
+    d.getMonth() === now.getMonth() &&
+    d.getDate() === now.getDate()
+  )
+    return clock
   if (d.getFullYear() === now.getFullYear()) return `${d.getMonth() + 1}月${d.getDate()}日 ${clock}`
   return `${d.getFullYear()}年${d.getMonth() + 1}月${d.getDate()}日 ${clock}`
 }
 
 function ToolCard({ call, events }: { call: ToolCallRequest; events: AgentEventRecord[] }) {
-  const event = events.find(item => item.type === 'tool_result' && (item.payload as { callId?: string }).callId === call.id)
+  const event = events.find(
+    (item) =>
+      item.type === 'tool_result' && (item.payload as { callId?: string }).callId === call.id,
+  )
   const result = event?.payload as { result?: ToolExecutionResult } | undefined
   const ok = result?.result?.ok
   const state = ok === undefined ? 'running' : ok === false ? 'error' : 'ok'
   return (
-    <details className={'tool-card' + (state === 'error' ? ' failed' : '')} data-state={state} open={ok === false}>
+    <details
+      className={'tool-card' + (state === 'error' ? ' failed' : '')}
+      data-state={state}
+      open={ok === false}
+    >
       <summary>
-        <span className="tool-icon">{state === 'error' ? <AlertTriangle size={14} /> : <Wrench size={14} />}</span>
+        <span className="tool-icon">
+          {state === 'error' ? <AlertTriangle size={14} /> : <Wrench size={14} />}
+        </span>
         <span className="tool-name">{getToolCallSummary(call)}</span>
         <span className="tool-summary">{toolSummary(result?.result)}</span>
         <ChevronDown size={14} className="tool-chevron" />
@@ -90,13 +160,26 @@ function toolSummary(result?: ToolExecutionResult): string {
 }
 
 export function EmptyConversation({ onPrompt }: { onPrompt: (value: string) => void }) {
-  const prompts = ['做一个有悬浮交互的首页', '搜索一下浏览器 Agent 的最新资料', '读取当前文件并告诉我哪里可以改进']
+  const prompts = [
+    '做一个有悬浮交互的首页',
+    '搜索一下浏览器 Agent 的最新资料',
+    '读取当前文件并告诉我哪里可以改进',
+  ]
   return (
     <div className="empty-conversation">
-      <div className="empty-orbit"><Bot size={28} /></div>
+      <div className="empty-orbit">
+        <Bot size={28} />
+      </div>
       <h2>我们做点什么？</h2>
       <p>从一个小的网页创意开始。Agent 可以读取、写入、搜索并解释虚拟工作台中的文件。</p>
-      <div className="prompt-grid">{prompts.map(prompt => <button key={prompt} onClick={() => onPrompt(prompt)}>{prompt}<span>↗</span></button>)}</div>
+      <div className="prompt-grid">
+        {prompts.map((prompt) => (
+          <button key={prompt} onClick={() => onPrompt(prompt)}>
+            {prompt}
+            <span>↗</span>
+          </button>
+        ))}
+      </div>
     </div>
   )
 }

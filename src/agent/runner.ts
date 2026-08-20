@@ -1,4 +1,10 @@
-import type { AgentEventRecord, AgentSettings, ChatMessageRecord, ToolCallRequest } from '../types'
+import type {
+  AgentEventRecord,
+  AgentSettings,
+  ChatAttachment,
+  ChatMessageRecord,
+  ToolCallRequest,
+} from '../types'
 import { beforePublish } from './policies'
 import { buildSystemPrompt, deriveModelMessages } from './prompt'
 import { requestModel } from '../model/client'
@@ -13,6 +19,7 @@ export interface RunTurnOptions {
   sessionId: string
   settings: AgentSettings
   text: string
+  attachments?: ChatAttachment[]
   signal?: AbortSignal
   onEvent?: (event: AgentEventRecord) => void | Promise<void>
   onDelta?: (delta: string) => void
@@ -34,19 +41,34 @@ export async function runUserTurn(options: RunTurnOptions): Promise<RunTurnResul
   let toolCallCount = 0
   const pendingDiagnostics: string[] = []
   const emit = async (type: AgentEventRecord['type'], payload: unknown): Promise<void> => {
-    const event: AgentEventRecord = { id: id('event'), sessionId, type, createdAt: Date.now(), payload }
+    const event: AgentEventRecord = {
+      id: id('event'),
+      sessionId,
+      type,
+      createdAt: Date.now(),
+      payload,
+    }
     await repository.appendEvent(event)
     await onEvent?.(event)
   }
-  const userMessage: ChatMessageRecord = { id: id('message'), sessionId, role: 'user', content: options.text.trim(), createdAt: Date.now(), status: 'final' }
+  const userMessage: ChatMessageRecord = {
+    id: id('message'),
+    sessionId,
+    role: 'user',
+    content: options.text.trim(),
+    ...(options.attachments?.length ? { attachments: options.attachments } : {}),
+    createdAt: Date.now(),
+    status: 'final',
+  }
   await repository.appendMessage(userMessage)
   await emit('user_message', { messageId: userMessage.id, content: userMessage.content })
-  if (!userMessage.content) throw new Error('Message cannot be empty')
+  if (!userMessage.content && !userMessage.attachments?.length)
+    throw new Error('Message cannot be empty')
 
   // First turn only: derive the short title with a separate model call before
   // the agent starts working, so the session title updates immediately.
   const isFirstTurn = (await repository.listMessages(sessionId)).length === 1
-  if (isFirstTurn) {
+  if (isFirstTurn && userMessage.content) {
     const turnTitle = await summarizeUserQuestion(settings, userMessage.content)
     if (turnTitle !== undefined) {
       await repository.renameSession(sessionId, turnTitle)
@@ -64,12 +86,13 @@ export async function runUserTurn(options: RunTurnOptions): Promise<RunTurnResul
       const history = await repository.listMessages(sessionId)
       const modelMessages = deriveModelMessages([
         { role: 'system', content: buildSystemPrompt(workspace, files) },
-        ...history.map(message => ({
+        ...history.map((message) => ({
           role: message.role,
           content: message.content,
           name: message.name,
           toolCallId: message.toolCallId,
           toolCalls: message.toolCalls,
+          attachments: message.attachments,
         })),
       ])
       const response = await requestModel({
@@ -114,14 +137,19 @@ export async function runUserTurn(options: RunTurnOptions): Promise<RunTurnResul
               const text = diagnostic.level + ': ' + diagnostic.message
               if (pendingDiagnostics.includes(text)) continue
               pendingDiagnostics.push(text)
-              await emit('preview_diagnostic', { path: result.changedPath, level: diagnostic.level, message: diagnostic.message, detail: diagnostic.detail })
+              await emit('preview_diagnostic', {
+                path: result.changedPath,
+                level: diagnostic.level,
+                message: diagnostic.message,
+                detail: diagnostic.detail,
+              })
             }
           }
         }
         continue
       }
 
-      const check = beforePublish(response.content, true)
+      const check = beforePublish(response.content)
       if (!check.ok) throw new Error(check.issues.join('; '))
       const assistantMessage: ChatMessageRecord = {
         id: id('message'),
@@ -132,8 +160,17 @@ export async function runUserTurn(options: RunTurnOptions): Promise<RunTurnResul
         status: 'final',
       }
       await repository.appendMessage(assistantMessage)
-      await emit('assistant_message', { messageId: assistantMessage.id, content: assistantMessage.content, segments: check.segments })
-      await emit('turn_end', { steps, toolCalls: toolCallCount, segmented: true, segments: check.segments })
+      await emit('assistant_message', {
+        messageId: assistantMessage.id,
+        content: assistantMessage.content,
+        segments: check.segments,
+      })
+      await emit('turn_end', {
+        steps,
+        toolCalls: toolCallCount,
+        segmented: true,
+        segments: check.segments,
+      })
       return { assistantMessage, toolCalls: toolCallCount, steps }
     }
   } catch (error) {
@@ -146,7 +183,8 @@ export async function runUserTurn(options: RunTurnOptions): Promise<RunTurnResul
 export function getToolCallSummary(call: ToolCallRequest): string {
   try {
     const args = JSON.parse(call.function.arguments) as Record<string, unknown>
-    const path = typeof args.path === 'string' ? args.path : typeof args.query === 'string' ? args.query : ''
+    const path =
+      typeof args.path === 'string' ? args.path : typeof args.query === 'string' ? args.query : ''
     return path ? call.function.name + ' · ' + path : call.function.name
   } catch {
     return call.function.name

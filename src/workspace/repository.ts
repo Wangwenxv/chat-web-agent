@@ -17,10 +17,15 @@ const DEFAULT_SETTINGS: AgentSettings = {
   apiKey: '',
   model: 'deepseek-chat',
   customHeaders: '',
+  supportsMultimodal: false,
 }
 
 export class RevisionConflictError extends Error {
-  constructor(public readonly path: string, public readonly expected: number, public readonly actual: number) {
+  constructor(
+    public readonly path: string,
+    public readonly expected: number,
+    public readonly actual: number,
+  ) {
     super(`Revision conflict for ${path}: expected ${expected}, current ${actual}`)
     this.name = 'RevisionConflictError'
   }
@@ -42,7 +47,7 @@ export interface GrepQuery {
 }
 
 export interface GrepResult {
-  matches: Array<{ path: string; line: number; text: string }>
+  matches: { path: string; line: number; text: string }[]
   truncated: boolean
   error?: string
   elapsedMs: number
@@ -57,24 +62,31 @@ export interface WorkspaceStats {
 
 let grepWorker: Worker | null = null
 let grepToken = 0
-let grepWaiters: Array<{ resolve: (value: GrepResult) => void }> = []
+const grepWaiters: { resolve: (value: GrepResult) => void }[] = []
 
 function getGrepWorker(): Worker {
   if (grepWorker) return grepWorker
   grepWorker = new Worker(new URL('./search-worker.ts', import.meta.url), { type: 'module' })
-  grepWorker.onmessage = (event: MessageEvent<{ type: 'result'; result?: GrepResult; error?: string }>) => {
+  grepWorker.onmessage = (
+    event: MessageEvent<{ type: 'result'; result?: GrepResult; error?: string }>,
+  ) => {
     const waiter = grepWaiters.shift()
     if (!waiter) return
     const { result, error } = event.data
-    waiter.resolve(error ? { matches: [], truncated: false, error, elapsedMs: 0 } : result ?? { matches: [], truncated: false, elapsedMs: 0 })
+    waiter.resolve(
+      error
+        ? { matches: [], truncated: false, error, elapsedMs: 0 }
+        : (result ?? { matches: [], truncated: false, elapsedMs: 0 }),
+    )
   }
   return grepWorker
 }
 
 function createId(prefix: string): string {
-  const uuid = typeof crypto !== 'undefined' && 'randomUUID' in crypto
-    ? crypto.randomUUID()
-    : `${Date.now()}-${Math.random().toString(16).slice(2)}`
+  const uuid =
+    typeof crypto !== 'undefined' && 'randomUUID' in crypto
+      ? crypto.randomUUID()
+      : `${Date.now()}-${Math.random().toString(16).slice(2)}`
   return `${prefix}_${uuid}`
 }
 
@@ -88,8 +100,10 @@ function request<T>(value: IDBRequest<T>): Promise<T> {
 function transactionDone(transaction: IDBTransaction): Promise<void> {
   return new Promise((resolve, reject) => {
     transaction.oncomplete = () => resolve()
-    transaction.onerror = () => reject(transaction.error ?? new Error('IndexedDB transaction failed'))
-    transaction.onabort = () => reject(transaction.error ?? new Error('IndexedDB transaction aborted'))
+    transaction.onerror = () =>
+      reject(transaction.error ?? new Error('IndexedDB transaction failed'))
+    transaction.onabort = () =>
+      reject(transaction.error ?? new Error('IndexedDB transaction aborted'))
   })
 }
 
@@ -135,7 +149,8 @@ export class BrowserRepository {
     const db = await this.db
     const tx = db.transaction('settings', 'readonly')
     const done = transactionDone(tx)
-    const stored = await request(tx.objectStore('settings').get('default')) as AgentSettings | undefined
+    const stored = (await request(tx.objectStore('settings').get('default'))) as
+      AgentSettings | undefined
     await done
     return { ...DEFAULT_SETTINGS, ...(stored ?? {}) }
   }
@@ -152,7 +167,8 @@ export class BrowserRepository {
     const db = await this.db
     const tx = db.transaction('settings', 'readonly')
     const done = transactionDone(tx)
-    const stored = await request(tx.objectStore('settings').get('preview-permissions')) as PreviewPermissions | undefined
+    const stored = (await request(tx.objectStore('settings').get('preview-permissions'))) as
+      PreviewPermissions | undefined
     await done
     return { ...DEFAULT_PREVIEW_PERMISSIONS, ...(stored ?? {}) }
   }
@@ -169,7 +185,9 @@ export class BrowserRepository {
     const db = await this.db
     const tx = db.transaction('settings', 'readonly')
     const done = transactionDone(tx)
-    const stored = await request(tx.objectStore('settings').get('preview-storage:' + workspaceId)) as Record<string, string> | undefined
+    const stored = (await request(
+      tx.objectStore('settings').get('preview-storage:' + workspaceId),
+    )) as Record<string, string> | undefined
     await done
     return stored ?? {}
   }
@@ -195,7 +213,8 @@ export class BrowserRepository {
     const db = await this.db
     const tx = db.transaction('workspaces', 'readonly')
     const done = transactionDone(tx)
-    const value = await request(tx.objectStore('workspaces').get(id)) as WorkspaceRecord | undefined
+    const value = (await request(tx.objectStore('workspaces').get(id))) as
+      WorkspaceRecord | undefined
     await done
     return value
   }
@@ -268,14 +287,14 @@ export class BrowserRepository {
 
   async getOrCreateSession(workspaceId: string): Promise<SessionRecord> {
     const sessions = await this.listSessions(workspaceId)
-    return sessions.find(session => !session.archivedAt) ?? this.createSession(workspaceId)
+    return sessions.find((session) => !session.archivedAt) ?? this.createSession(workspaceId)
   }
 
   async getSession(id: string): Promise<SessionRecord | undefined> {
     const db = await this.db
     const tx = db.transaction('sessions', 'readonly')
     const done = transactionDone(tx)
-    const value = await request(tx.objectStore('sessions').get(id)) as SessionRecord | undefined
+    const value = (await request(tx.objectStore('sessions').get(id))) as SessionRecord | undefined
     await done
     return value
   }
@@ -284,7 +303,9 @@ export class BrowserRepository {
     const db = await this.db
     const tx = db.transaction('sessions', 'readonly')
     const done = transactionDone(tx)
-    const values = await request(tx.objectStore('sessions').index('workspaceId').getAll(workspaceId))
+    const values = await request(
+      tx.objectStore('sessions').index('workspaceId').getAll(workspaceId),
+    )
     await done
     return (values as SessionRecord[]).sort((a, b) => b.updatedAt - a.updatedAt)
   }
@@ -295,7 +316,9 @@ export class BrowserRepository {
     const done = transactionDone(tx)
     const values = await request(tx.objectStore('files').index('workspaceId').getAll(workspaceId))
     await done
-    return (values as Array<WorkspaceFile & { id: string; workspaceId: string }>).sort((a, b) => a.path.localeCompare(b.path))
+    return (values as (WorkspaceFile & { id: string; workspaceId: string })[]).sort((a, b) =>
+      a.path.localeCompare(b.path),
+    )
   }
 
   async getFile(workspaceId: string, path: string): Promise<WorkspaceFile | undefined> {
@@ -303,12 +326,19 @@ export class BrowserRepository {
     const db = await this.db
     const tx = db.transaction('files', 'readonly')
     const done = transactionDone(tx)
-    const value = await request(tx.objectStore('files').index('workspacePath').get([workspaceId, normalized])) as (WorkspaceFile & { id: string; workspaceId: string }) | undefined
+    const value = (await request(
+      tx.objectStore('files').index('workspacePath').get([workspaceId, normalized]),
+    )) as (WorkspaceFile & { id: string; workspaceId: string }) | undefined
     await done
     return value
   }
 
-  async writeFile(workspaceId: string, path: string, content: string, expectedRevision?: number): Promise<WorkspaceFile> {
+  async writeFile(
+    workspaceId: string,
+    path: string,
+    content: string,
+    expectedRevision?: number,
+  ): Promise<WorkspaceFile> {
     const normalized = requirePath(path)
     const current = await this.getFile(workspaceId, normalized)
     if (current && expectedRevision !== undefined && current.revision !== expectedRevision) {
@@ -344,13 +374,26 @@ export class BrowserRepository {
     return file
   }
 
-  async editFile(workspaceId: string, path: string, oldText: string, newText: string, expectedRevision: number): Promise<WorkspaceFile> {
+  async editFile(
+    workspaceId: string,
+    path: string,
+    oldText: string,
+    newText: string,
+    expectedRevision: number,
+  ): Promise<WorkspaceFile> {
     const current = await this.getFile(workspaceId, path)
     const normalized = requirePath(path)
     if (!current) throw new WorkspacePolicyError(`File does not exist: ${normalized}`)
-    if (current.revision !== expectedRevision) throw new RevisionConflictError(normalized, expectedRevision, current.revision)
-    if (!current.content.includes(oldText)) throw new WorkspacePolicyError(`The expected text was not found in ${normalized}`)
-    return this.writeFile(workspaceId, normalized, current.content.replace(oldText, newText), expectedRevision)
+    if (current.revision !== expectedRevision)
+      throw new RevisionConflictError(normalized, expectedRevision, current.revision)
+    if (!current.content.includes(oldText))
+      throw new WorkspacePolicyError(`The expected text was not found in ${normalized}`)
+    return this.writeFile(
+      workspaceId,
+      normalized,
+      current.content.replace(oldText, newText),
+      expectedRevision,
+    )
   }
 
   async deleteFile(workspaceId: string, path: string): Promise<void> {
@@ -363,14 +406,21 @@ export class BrowserRepository {
     await this.touchWorkspace(workspaceId)
   }
 
-  async listRevisions(workspaceId: string, path: string): Promise<Array<{ revision: number; content: string; createdAt: number }>> {
+  async listRevisions(
+    workspaceId: string,
+    path: string,
+  ): Promise<{ revision: number; content: string; createdAt: number }[]> {
     const normalized = requirePath(path)
     const db = await this.db
     const tx = db.transaction('revisions', 'readonly')
     const done = transactionDone(tx)
-    const values = await request(tx.objectStore('revisions').index('workspaceId').getAll(workspaceId)) as Array<{ path: string; revision: number; content: string; createdAt: number }>
+    const values = (await request(
+      tx.objectStore('revisions').index('workspaceId').getAll(workspaceId),
+    )) as { path: string; revision: number; content: string; createdAt: number }[]
     await done
-    return values.filter(value => value.path === normalized).sort((a, b) => b.revision - a.revision)
+    return values
+      .filter((value) => value.path === normalized)
+      .sort((a, b) => b.revision - a.revision)
   }
 
   async getWorkspaceStats(workspaceId: string): Promise<WorkspaceStats> {
@@ -386,18 +436,29 @@ export class BrowserRepository {
   async deleteWorkspace(workspaceId: string): Promise<void> {
     const db = await this.db
     const files = await this.listFiles(workspaceId)
-    const tx = db.transaction(['workspaces', 'files', 'revisions', 'sessions', 'messages', 'events'], 'readwrite')
+    const tx = db.transaction(
+      ['workspaces', 'files', 'revisions', 'sessions', 'messages', 'events'],
+      'readwrite',
+    )
     const done = transactionDone(tx)
     tx.objectStore('workspaces').delete(workspaceId)
     for (const file of files) tx.objectStore('files').delete(`${workspaceId}:${file.path}`)
-    const revisions = await request(tx.objectStore('revisions').index('workspaceId').getAllKeys(workspaceId))
+    const revisions = await request(
+      tx.objectStore('revisions').index('workspaceId').getAllKeys(workspaceId),
+    )
     for (const key of revisions) tx.objectStore('revisions').delete(key)
-    const sessions = await request(tx.objectStore('sessions').index('workspaceId').getAllKeys(workspaceId))
+    const sessions = await request(
+      tx.objectStore('sessions').index('workspaceId').getAllKeys(workspaceId),
+    )
     for (const key of sessions) {
       const sessionId = String(key)
-      const messages = await request(tx.objectStore('messages').index('sessionId').getAllKeys(sessionId))
+      const messages = await request(
+        tx.objectStore('messages').index('sessionId').getAllKeys(sessionId),
+      )
       for (const messageKey of messages) tx.objectStore('messages').delete(messageKey)
-      const events = await request(tx.objectStore('events').index('sessionId').getAllKeys(sessionId))
+      const events = await request(
+        tx.objectStore('events').index('sessionId').getAllKeys(sessionId),
+      )
       for (const eventKey of events) tx.objectStore('events').delete(eventKey)
       tx.objectStore('sessions').delete(key)
     }
@@ -409,7 +470,9 @@ export class BrowserRepository {
     const tx = db.transaction(['sessions', 'messages', 'events'], 'readwrite')
     const done = transactionDone(tx)
     tx.objectStore('sessions').delete(sessionId)
-    const messages = await request(tx.objectStore('messages').index('sessionId').getAllKeys(sessionId))
+    const messages = await request(
+      tx.objectStore('messages').index('sessionId').getAllKeys(sessionId),
+    )
     for (const key of messages) tx.objectStore('messages').delete(key)
     const events = await request(tx.objectStore('events').index('sessionId').getAllKeys(sessionId))
     for (const key of events) tx.objectStore('events').delete(key)
@@ -446,7 +509,11 @@ export class BrowserRepository {
     const files = await this.listFiles(workspaceId)
     const token = ++grepToken
     const worker = getGrepWorker()
-    worker.postMessage({ type: 'load', token, files: files.map(file => ({ path: file.path, content: file.content })) })
+    worker.postMessage({
+      type: 'load',
+      token,
+      files: files.map((file) => ({ path: file.path, content: file.content })),
+    })
     return new Promise((resolve) => {
       grepWaiters.push({ resolve })
       worker.postMessage({ type: 'search', token, query })
@@ -493,7 +560,9 @@ function requirePath(path: string): string {
   if (!normalized) throw new WorkspacePolicyError('Path must be a relative virtual workspace path')
   if (normalized.length > 240) throw new WorkspacePolicyError('Path is too long')
   const extension = /\.[^.]+$/.exec(normalized.toLowerCase())?.[0] ?? ''
-  if (['.py', '.sh', '.bash', '.ps1', '.bat', '.cmd', '.exe', '.dll', '.node'].includes(extension)) {
+  if (
+    ['.py', '.sh', '.bash', '.ps1', '.bat', '.cmd', '.exe', '.dll', '.node'].includes(extension)
+  ) {
     throw new WorkspacePolicyError(`Unsupported executable or server-side file type: ${extension}`)
   }
   return normalized
@@ -501,7 +570,8 @@ function requirePath(path: string): string {
 
 function validateContent(content: string): void {
   if (typeof content !== 'string') throw new WorkspacePolicyError('File content must be text')
-  if (content.length > 1_048_576) throw new WorkspacePolicyError('A single file is limited to 1 MiB')
+  if (content.length > 1_048_576)
+    throw new WorkspacePolicyError('A single file is limited to 1 MiB')
 }
 
 const seedFiles: Record<string, string> = {
@@ -542,4 +612,3 @@ button?.addEventListener('click', () => {
   button.textContent = 'It works';
 });`,
 }
-

@@ -10,8 +10,12 @@ export interface SettingsModalProps {
   onSave: (value: AgentSettings, permissions: PreviewPermissions) => void
 }
 
-const PERMISSION_ITEMS: Array<{ key: keyof PreviewPermissions; label: string; hint: string }> = [
-  { key: 'allowSameOrigin', label: '同源访问', hint: 'localStorage / IndexedDB / Cookie 等本地存储' },
+const PERMISSION_ITEMS: { key: keyof PreviewPermissions; label: string; hint: string }[] = [
+  {
+    key: 'allowSameOrigin',
+    label: '同源访问',
+    hint: 'localStorage / IndexedDB / Cookie 等本地存储',
+  },
   { key: 'allowNetwork', label: '网络请求', hint: 'fetch / XHR / WebSocket 访问外网' },
   { key: 'allowExternalScripts', label: '外链脚本与样式', hint: 'CDN 的 <script> / <link> 资源' },
   { key: 'allowExternalImages', label: '外链图片', hint: '<img> 的 https 图片来源' },
@@ -37,8 +41,9 @@ export function SettingsModal({ value, permissions, onClose, onSave }: SettingsM
   const [listMessage, setListMessage] = useState('')
   const [models, setModels] = useState<string[]>([])
   const [headerError, setHeaderError] = useState('')
-  const patch = (next: Partial<AgentSettings>) => setDraft(current => ({ ...current, ...next }))
-  const togglePermission = (key: keyof PreviewPermissions) => setPermDraft(current => ({ ...current, [key]: !current[key] }))
+  const patch = (next: Partial<AgentSettings>) => setDraft((current) => ({ ...current, ...next }))
+  const togglePermission = (key: keyof PreviewPermissions) =>
+    setPermDraft((current) => ({ ...current, [key]: !current[key] }))
 
   const handleTest = async () => {
     setTestState('testing')
@@ -76,36 +81,176 @@ export function SettingsModal({ value, permissions, onClose, onSave }: SettingsM
   }
 
   return (
-    <div className="modal-layer" onMouseDown={event => { if (event.target === event.currentTarget) onClose() }}>
+    <div
+      className="modal-layer"
+      onMouseDown={(event) => {
+        if (event.target === event.currentTarget) onClose()
+      }}
+    >
       <section className="settings-modal">
         <div className="modal-heading">
-          <div><span className="eyebrow">运行时</span><h2>Agent 设置</h2></div>
-          <button className="icon-button" title="关闭设置" onClick={onClose}><X size={17} /></button>
+          <div>
+            <span className="eyebrow">运行时</span>
+            <h2>Agent 设置</h2>
+          </div>
+          <button className="icon-button" title="关闭设置" onClick={onClose}>
+            <X size={17} />
+          </button>
         </div>
         <div className="settings-scroll">
-          <label className="field-label">模型 API 地址<input value={draft.apiBaseUrl} onChange={event => patch({ apiBaseUrl: event.target.value })} placeholder="https://api.deepseek.com/v1" /></label>
-          <label className="field-label">API Key<input type="password" value={draft.apiKey} onChange={event => patch({ apiKey: event.target.value })} placeholder="仅保存在本浏览器内" /></label>
-          <label className="field-label">自定义请求头<small className="field-hint">JSON 对象，会合并到每个模型请求中，用于中转站要求特定请求头的场景（例如 &#123;"User-Agent": "codex-router/1.0.0"&#125;）。浏览器禁止的请求头会被忽略。</small><textarea value={draft.customHeaders} onChange={event => patch({ customHeaders: event.target.value })} rows={3} placeholder='{"User-Agent": "codex-router/1.0.0"}' /></label>
+          <label className="field-label">
+            模型 API 地址
+            <input
+              value={draft.apiBaseUrl}
+              onChange={(event) => patch({ apiBaseUrl: event.target.value })}
+              placeholder="https://api.deepseek.com/v1"
+            />
+          </label>
+          <label className="field-label">
+            API Key
+            <input
+              type="password"
+              value={draft.apiKey}
+              onChange={(event) => patch({ apiKey: event.target.value })}
+              placeholder="仅保存在本浏览器内"
+            />
+          </label>
+          <label className="field-label">
+            自定义请求头
+            <small className="field-hint">
+              JSON 对象，会合并到每个模型请求中，用于中转站要求特定请求头的场景（例如
+              &#123;"User-Agent": "codex-router/1.0.0"&#125;）。浏览器禁止的请求头会被忽略。
+            </small>
+            <textarea
+              value={draft.customHeaders}
+              onChange={(event) => patch({ customHeaders: event.target.value })}
+              rows={3}
+              placeholder='{"User-Agent": "codex-router/1.0.0"}'
+            />
+          </label>
           {headerError && <div className="header-error">{headerError}</div>}
-          <label className="field-label">模型<div className="model-row"><input value={draft.model} onChange={event => patch({ model: event.target.value })} placeholder="deepseek-chat" list="model-options" /><button className="secondary-button" disabled={listState === 'loading'} title="从 /models 接口拉取模型列表" onClick={() => void handleFetchModels()}>{listState === 'loading' ? <LoaderCircle size={13} className="spin" /> : <ListTree size={13} />}拉取模型</button></div>{models.length > 0 && <select className="model-picker" value={draft.model} onChange={event => patch({ model: event.target.value })}>{models.map(item => <option key={item} value={item}>{item}</option>)}</select>}<datalist id="model-options">{models.map(item => <option key={item} value={item} />)}</datalist>{listMessage && <span className="test-message">{listMessage}</span>}</label>
+          <label className="field-label">
+            模型
+            <div className="model-row">
+              <input
+                value={draft.model}
+                onChange={(event) => patch({ model: event.target.value })}
+                placeholder="deepseek-chat"
+                list="model-options"
+              />
+              <button
+                className="secondary-button"
+                disabled={listState === 'loading'}
+                title="从 /models 接口拉取模型列表"
+                onClick={() => void handleFetchModels()}
+              >
+                {listState === 'loading' ? (
+                  <LoaderCircle size={13} className="spin" />
+                ) : (
+                  <ListTree size={13} />
+                )}
+                拉取模型
+              </button>
+            </div>
+            {models.length > 0 && (
+              <select
+                className="model-picker"
+                value={draft.model}
+                onChange={(event) => patch({ model: event.target.value })}
+              >
+                {models.map((item) => (
+                  <option key={item} value={item}>
+                    {item}
+                  </option>
+                ))}
+              </select>
+            )}
+            <datalist id="model-options">
+              {models.map((item) => (
+                <option key={item} value={item} />
+              ))}
+            </datalist>
+            {listMessage && <span className="test-message">{listMessage}</span>}
+          </label>
           <div className="test-row">
-            <button className="secondary-button" disabled={testState === 'testing'} title="测试接口连通性" onClick={() => void handleTest()}>{testState === 'testing' ? <LoaderCircle size={13} className="spin" /> : <PlugZap size={13} />}测试连接</button>
-            {testMessage && <span className={'test-message' + (testState === 'done' && testOk ? ' ok' : '')}>{testMessage}</span>}
+            <button
+              className="secondary-button"
+              disabled={testState === 'testing'}
+              title="测试接口连通性"
+              onClick={() => void handleTest()}
+            >
+              {testState === 'testing' ? (
+                <LoaderCircle size={13} className="spin" />
+              ) : (
+                <PlugZap size={13} />
+              )}
+              测试连接
+            </button>
+            {testMessage && (
+              <span className={'test-message' + (testState === 'done' && testOk ? ' ok' : '')}>
+                {testMessage}
+              </span>
+            )}
+            <label
+              className={
+                'setting-toggle multimodal-toggle' + (draft.supportsMultimodal ? ' is-on' : '')
+              }
+            >
+              <input
+                type="checkbox"
+                checked={draft.supportsMultimodal}
+                onChange={(event) => patch({ supportsMultimodal: event.target.checked })}
+              />
+              <span>
+                <strong>支持多模态</strong>
+                <small>图片与附件</small>
+              </span>
+            </label>
           </div>
           <div className="settings-divider" />
-          <div className="permission-heading"><div><span className="eyebrow">沙箱</span><h3>预览权限</h3></div><span className="field-hint">预览页面可使用的能力开关，默认全部开启。关闭后对应能力将不可用。</span></div>
+          <div className="permission-heading">
+            <div>
+              <span className="eyebrow">沙箱</span>
+              <h3>预览权限</h3>
+            </div>
+            <span className="field-hint">
+              预览页面可使用的能力开关，默认全部开启。关闭后对应能力将不可用。
+            </span>
+          </div>
           <div className="permission-grid">
-            {PERMISSION_ITEMS.map(item => (
-              <label className={'setting-toggle' + (permDraft[item.key] ? ' is-on' : '')} key={item.key}>
-                <input type="checkbox" checked={permDraft[item.key]} onChange={() => togglePermission(item.key)} />
-                <span><strong>{item.label}</strong><small>{item.hint}</small></span>
+            {PERMISSION_ITEMS.map((item) => (
+              <label
+                className={'setting-toggle' + (permDraft[item.key] ? ' is-on' : '')}
+                key={item.key}
+              >
+                <input
+                  type="checkbox"
+                  checked={permDraft[item.key]}
+                  onChange={() => togglePermission(item.key)}
+                />
+                <span>
+                  <strong>{item.label}</strong>
+                  <small>{item.hint}</small>
+                </span>
               </label>
             ))}
           </div>
         </div>
         <div className="modal-actions">
           <span className="security-note">API Key 永远不会进入预览页面或导出的 ZIP。</span>
-          <button className="primary-button" onClick={() => { try { parseRequestHeaders(draft.customHeaders); onSave(draft, permDraft) } catch (cause) { setHeaderError(cause instanceof Error ? cause.message : String(cause)) } }}>保存设置</button>
+          <button
+            className="primary-button"
+            onClick={() => {
+              try {
+                parseRequestHeaders(draft.customHeaders)
+                onSave(draft, permDraft)
+              } catch (cause) {
+                setHeaderError(cause instanceof Error ? cause.message : String(cause))
+              }
+            }}
+          >
+            保存设置
+          </button>
         </div>
       </section>
     </div>
