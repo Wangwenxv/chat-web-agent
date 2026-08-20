@@ -1866,6 +1866,109 @@ textarea:focus-visible {
 }
 
 /* ==========================================================================
+   确认 / 输入对话框
+   ========================================================================== */
+
+.confirm-modal {
+  width: min(420px, 100%);
+  overflow: hidden;
+  border: 1px solid var(--line-strong);
+  border-radius: 10px;
+  background: var(--surface);
+  box-shadow: 0 22px 70px rgba(35, 43, 59, .2);
+}
+
+.confirm-heading {
+  padding: 14px 14px 12px 18px;
+}
+
+.confirm-title {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+}
+
+.confirm-title h2 {
+  margin: 0;
+  overflow: hidden;
+  color: var(--text);
+  font-size: 14px;
+  font-weight: 650;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.confirm-icon {
+  display: grid;
+  flex: none;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  border-radius: 8px;
+  color: var(--amber);
+  background: var(--amber-soft);
+}
+
+.confirm-icon.danger {
+  color: var(--red);
+  background: var(--red-soft);
+}
+
+.confirm-body {
+  display: grid;
+  gap: 14px;
+  padding: 4px 18px 18px;
+}
+
+.confirm-message {
+  margin: 0;
+  color: var(--text-soft);
+  font-size: 12px;
+  line-height: 1.6;
+  overflow-wrap: anywhere;
+}
+
+.confirm-input {
+  width: 100%;
+  padding: 9px 10px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  outline: 0;
+  color: var(--text);
+  background: var(--surface-soft);
+  font-size: 13px;
+}
+
+.confirm-input:focus {
+  border-color: rgba(65, 105, 225, .6);
+  background: #fff;
+}
+
+.confirm-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  padding: 12px 18px;
+  border-top: 1px solid var(--line);
+}
+
+.danger-button {
+  padding: 9px 13px;
+  border: 0;
+  border-radius: 6px;
+  color: #fff;
+  background: var(--red);
+  font-size: 12px;
+  font-weight: 650;
+  cursor: pointer;
+}
+
+.danger-button:hover {
+  background: #b3473c;
+}
+
+/* ==========================================================================
    加载与动画
    ========================================================================== */
 

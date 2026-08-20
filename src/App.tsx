@@ -38,6 +38,7 @@ import { MarkdownRenderer } from './components/chat/MarkdownRenderer'
 import { PreviewPanel } from './components/inspector/PreviewPanel'
 import { SourcePanel, ProblemsPanel, DiffPanel } from './components/inspector/InspectorPanels'
 import { SettingsModal } from './components/settings/SettingsModal'
+import { DialogHost, showConfirm, showPrompt } from './components/common/Dialog'
 
 type InspectorTab = 'preview' | 'problems' | 'diff' | 'source'
 
@@ -377,7 +378,13 @@ export default function App() {
   }, [handleEvent, inputAttachments, inputValue, reload, running, session, settings, workspace])
 
   const handleNewWorkspace = useCallback(async () => {
-    const title = window.prompt('工作区名称', '新建网页工作区')?.trim()
+    const title = await showPrompt({
+      title: '新建工作区',
+      message: '输入新工作区的名称。',
+      defaultValue: '新建网页工作区',
+      placeholder: '工作区名称',
+      maxLength: 60,
+    })
     if (!title) return
     const nextWorkspace = await repository.createWorkspace(title)
     await repository.writeFile(
@@ -394,6 +401,23 @@ export default function App() {
     setWorkspaces(await repository.listWorkspaces())
     await reload(nextWorkspace.id, nextSession.id)
   }, [reload])
+
+  const handleRenameWorkspace = useCallback(async () => {
+    if (!workspace) return
+    const title = await showPrompt({
+      title: '重命名工作区',
+      message: '修改当前工作区的名称。',
+      defaultValue: workspace.title,
+      placeholder: '工作区名称',
+      maxLength: 60,
+    })
+    if (!title || title === workspace.title) return
+    const renamed = await repository.renameWorkspace(workspace.id, title)
+    if (renamed) {
+      setWorkspace(renamed)
+      setWorkspaces(await repository.listWorkspaces())
+    }
+  }, [workspace])
 
   const handleNewSession = useCallback(async () => {
     if (!workspace || !settings) return
@@ -433,7 +457,13 @@ export default function App() {
   const handleDeleteSession = useCallback(
     async (sessionId: string) => {
       if (!workspace) return
-      if (!window.confirm('确定永久删除这段会话及其消息、工具记录吗？此操作不可撤销。')) return
+      const confirmed = await showConfirm({
+        title: '删除会话',
+        message: '确定永久删除这段会话及其消息、工具记录吗？此操作不可撤销。',
+        confirmText: '删除',
+        danger: true,
+      })
+      if (!confirmed) return
       try {
         await repository.deleteSession(sessionId)
         const nextSessions = await repository.listSessions(workspace.id)
@@ -526,8 +556,13 @@ export default function App() {
   const handleDeleteWorkspace = useCallback(
     async (workspaceId: string) => {
       if (!session || !settings) return
-      if (!window.confirm('确定删除该工作区及其本地文件、版本记录和会话吗？此操作不可撤销。'))
-        return
+      const confirmed = await showConfirm({
+        title: '删除工作区',
+        message: '确定删除该工作区及其本地文件、版本记录和会话吗？此操作不可撤销。',
+        confirmText: '删除',
+        danger: true,
+      })
+      if (!confirmed) return
       try {
         await repository.deleteWorkspace(workspaceId)
         setWorkspaces(await repository.listWorkspaces())
@@ -670,6 +705,7 @@ export default function App() {
           onSelectWorkspace={(id) => void handleSwitchWorkspace(id)}
           onNewWorkspace={() => void handleNewWorkspace()}
           onImportWorkspace={(file) => void handleImportWorkspace(file)}
+          onRenameWorkspace={() => void handleRenameWorkspace()}
           onDeleteWorkspace={() => void handleDeleteWorkspace(workspace.id)}
           onNewSession={() => void handleNewSession()}
           onOpenSettings={() => setSettingsOpen(true)}
@@ -867,6 +903,8 @@ export default function App() {
           onSave={(next, nextPermissions) => void handleSettingsSave(next, nextPermissions)}
         />
       )}
+
+      <DialogHost />
     </div>
   )
 }

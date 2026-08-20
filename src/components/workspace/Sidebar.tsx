@@ -5,6 +5,7 @@ import {
   FolderPlus,
   FolderUp,
   PanelLeftClose,
+  Pencil,
   Plus,
   Settings2,
   Sparkles,
@@ -23,6 +24,7 @@ export interface SidebarProps {
   onSelectWorkspace: (workspaceId: string) => void
   onNewWorkspace: () => void
   onImportWorkspace: (file: File) => void
+  onRenameWorkspace: () => void
   onDeleteWorkspace: () => void
   onNewSession: () => void
   onOpenSettings: () => void
@@ -120,6 +122,10 @@ export function Sidebar(props: SidebarProps) {
             }}
           />
         </label>
+        <button className="sidebar-action" onClick={props.onRenameWorkspace}>
+          <Pencil size={15} />
+          <span>重命名工作区</span>
+        </button>
         <button className="sidebar-action" onClick={props.onDeleteWorkspace}>
           <Trash2 size={15} />
           <span>删除工作区</span>

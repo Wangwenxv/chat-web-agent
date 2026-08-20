@@ -267,6 +267,22 @@ export class BrowserRepository {
     await done
   }
 
+  async renameWorkspace(workspaceId: string, title: string): Promise<WorkspaceRecord | undefined> {
+    const workspace = await this.getWorkspace(workspaceId)
+    if (!workspace) return
+    const renamed: WorkspaceRecord = {
+      ...workspace,
+      title: title.trim().slice(0, 60) || workspace.title,
+      updatedAt: Date.now(),
+    }
+    const db = await this.db
+    const tx = db.transaction('workspaces', 'readwrite')
+    const done = transactionDone(tx)
+    tx.objectStore('workspaces').put(renamed)
+    await done
+    return renamed
+  }
+
   async createSession(workspaceId: string, title = '新会话'): Promise<SessionRecord> {
     const now = Date.now()
     const session: SessionRecord = {
