@@ -875,6 +875,90 @@ textarea:focus-visible {
   margin-top: 8px;
 }
 
+.thinking-block {
+  overflow: hidden;
+  margin-bottom: 12px;
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  background: var(--surface-soft);
+}
+
+.thinking-block summary {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  min-height: 32px;
+  padding: 0 10px;
+  color: var(--text-faint);
+  font-size: 11px;
+  font-weight: 600;
+  cursor: pointer;
+  list-style: none;
+  user-select: none;
+}
+
+.thinking-block summary::-webkit-details-marker {
+  display: none;
+}
+
+.thinking-block summary:hover {
+  background: var(--surface-muted);
+}
+
+.thinking-block .tool-chevron {
+  margin-left: auto;
+}
+
+.thinking-block[open] .tool-chevron {
+  transform: rotate(180deg);
+}
+
+.thinking-content {
+  padding: 10px 12px;
+  border-top: 1px solid var(--line);
+  color: var(--text-faint);
+  font-size: 12px;
+  line-height: 1.6;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  max-height: 320px;
+  overflow: auto;
+}
+
+.changed-files {
+  display: grid;
+  gap: 6px;
+  margin-top: 10px;
+  padding: 9px 11px;
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  background: var(--surface-soft);
+}
+
+.changed-files-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--text-soft);
+  font-size: 11px;
+  font-weight: 650;
+}
+
+.changed-files-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+}
+
+.changed-file-chip {
+  padding: 3px 7px;
+  border: 1px solid #c9d5fb;
+  border-radius: 5px;
+  color: var(--blue);
+  background: var(--blue-soft);
+  font: 11px ui-monospace, SFMono-Regular, Consolas, monospace;
+}
+
 .tool-stack {
   display: grid;
   gap: 4px;
@@ -1158,6 +1242,53 @@ textarea:focus-visible {
   gap: 6px;
   color: var(--text-faint);
   font-size: 10px;
+}
+
+.composer-select {
+  max-width: 170px;
+  height: 24px;
+  padding: 0 6px;
+  border: 1px solid var(--line);
+  border-radius: 5px;
+  outline: 0;
+  color: var(--text-soft);
+  background: var(--surface);
+  font-size: 11px;
+  cursor: pointer;
+}
+
+.composer-select:focus {
+  border-color: rgba(65, 105, 225, .55);
+}
+
+.composer-select:disabled {
+  cursor: default;
+  opacity: .5;
+}
+
+.composer-model-select {
+  font: 11px ui-monospace, SFMono-Regular, Consolas, monospace;
+}
+
+.composer-select-row {
+  display: none;
+  gap: 6px;
+  padding: 8px 12px 0;
+}
+
+.composer-select-row .composer-select {
+  flex: 1;
+  min-width: 0;
+  max-width: none;
+  height: 28px;
+}
+
+.composer-tools .composer-select {
+  margin-left: 8px;
+}
+
+.composer-tools .composer-reasoning-select {
+  margin-left: 6px;
 }
 
 .send-button {
@@ -1878,6 +2009,24 @@ textarea:focus-visible {
   color: var(--text);
   background: var(--surface-soft);
   font-size: 12px;
+}
+
+.model-list-editor {
+  width: 100%;
+  margin-top: 6px;
+  padding: 8px 10px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  outline: 0;
+  resize: vertical;
+  color: var(--text);
+  background: var(--surface-soft);
+  font: 11px/1.5 ui-monospace, SFMono-Regular, Consolas, monospace;
+}
+
+.model-list-editor:focus {
+  border-color: rgba(65, 105, 225, .6);
+  background: #fff;
 }
 
 .hidden-file-input {
@@ -2963,6 +3112,18 @@ body.is-resizing-inspector * {
 
   .composer {
     padding: 10px 12px calc(12px + env(safe-area-inset-bottom));
+  }
+
+  .composer-select-row {
+    display: flex;
+  }
+
+  .composer-tools .composer-select {
+    display: none;
+  }
+
+  .composer-tools {
+    padding-top: 6px;
   }
 
   /* 弹窗提升到抽屉之上，并以实际可视高度居中且允许内容内部滚动。 */

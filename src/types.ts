@@ -41,6 +41,8 @@ export interface ChatMessageRecord {
   name?: string
   toolCallId?: string
   toolCalls?: ToolCallRequest[]
+  thinking?: string
+  changedFiles?: string[]
   status?: 'streaming' | 'final' | 'error'
 }
 
@@ -76,6 +78,10 @@ export interface AgentSettings {
   model: string
   customHeaders: string
   supportsMultimodal: boolean
+  reasoningEffort: string
+  reasoningOptions: string
+  modelList: string[]
+  showThinking: boolean
 }
 
 export interface PreviewPermissions {
@@ -171,6 +177,7 @@ export interface ModelResponse {
   id?: string
   content: string
   toolCalls: ToolCallRequest[]
+  thinking?: string
   finishReason?: string
   usage?: { prompt_tokens?: number; completion_tokens?: number; total_tokens?: number }
 }

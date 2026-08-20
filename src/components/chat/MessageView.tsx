@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
-import { AlertTriangle, Bot, Check, ChevronDown, Copy, Wrench } from 'lucide-react'
+import { AlertTriangle, Bot, Brain, Check, ChevronDown, Copy, FilePen, Wrench } from 'lucide-react'
 import type {
   AgentEventRecord,
   ChatMessageRecord,
@@ -12,9 +12,11 @@ import { MarkdownRenderer } from './MarkdownRenderer'
 export function MessageView({
   message,
   events,
+  showThinking,
 }: {
   message: ChatMessageRecord
   events: AgentEventRecord[]
+  showThinking: boolean
 }) {
   if (message.role === 'tool') return null
   if (message.role === 'user') return <UserMessageView message={message} />
@@ -36,11 +38,45 @@ export function MessageView({
   }
   return (
     <div className="assistant-block final-answer">
+      {showThinking && message.thinking && <ThinkingBlock text={message.thinking} />}
       <div className="assistant-copy">
         <MarkdownRenderer source={message.content} />
       </div>
+      {message.changedFiles?.length ? (
+        <div className="changed-files">
+          <span className="changed-files-label">
+            <FilePen size={13} />
+            修改了 {message.changedFiles.length} 个文件
+          </span>
+          <div className="changed-files-list">
+            {message.changedFiles.map((path) => (
+              <span className="changed-file-chip" key={path}>
+                {path}
+              </span>
+            ))}
+          </div>
+        </div>
+      ) : null}
       <MessageChrome text={message.content} time={message.createdAt} />
     </div>
+  )
+}
+
+function ThinkingBlock({ text }: { text: string }) {
+  const [open, setOpen] = useState(false)
+  return (
+    <details
+      className="thinking-block"
+      open={open}
+      onToggle={(event) => setOpen(event.currentTarget.open)}
+    >
+      <summary>
+        <Brain size={14} />
+        <span>思考过程</span>
+        <ChevronDown size={14} className="tool-chevron" />
+      </summary>
+      <div className="thinking-content">{text}</div>
+    </details>
   )
 }
 

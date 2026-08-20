@@ -30,6 +30,7 @@ import { buildPreview, buildPreviewAllowAttribute, buildPreviewSandbox } from '.
 import { downloadFile, downloadWorkspaceZip, parseWorkspaceZip } from './export/zip'
 import { runUserTurn } from './agent/runner'
 import { BrowserRepository } from './workspace/repository'
+import { reasoningOptionsForModel } from './lib/reasoning'
 import { Sidebar } from './components/workspace/Sidebar'
 import { SessionList } from './components/chat/SessionList'
 import { MessageView, EmptyConversation, TurnStatus } from './components/chat/MessageView'
@@ -593,6 +594,28 @@ export default function App() {
     [],
   )
 
+  const handleModelsChange = useCallback((models: string[]) => {
+    setSettings((current) => (current ? { ...current, modelList: models } : current))
+  }, [])
+
+  const handleModelChange = useCallback((model: string) => {
+    setSettings((current) => {
+      if (!current) return current
+      const next = { ...current, model }
+      void repository.saveSettings(next)
+      return next
+    })
+  }, [])
+
+  const handleReasoningChange = useCallback((reasoningEffort: string) => {
+    setSettings((current) => {
+      if (!current) return current
+      const next = { ...current, reasoningEffort }
+      void repository.saveSettings(next)
+      return next
+    })
+  }, [])
+
   const handleSourceSave = useCallback(
     async (file: WorkspaceFile, content: string) => {
       if (!workspace) throw new Error('工作区已关闭')
@@ -756,7 +779,12 @@ export default function App() {
           <div className="message-scroll" ref={messageScrollRef}>
             {messages.length === 0 && !running && <EmptyConversation onPrompt={setInputValue} />}
             {messages.map((message) => (
-              <MessageView key={message.id} message={message} events={events} />
+              <MessageView
+                key={message.id}
+                message={message}
+                events={events}
+                showThinking={settings.showThinking}
+              />
             ))}
             {running && <TurnStatus />}
             {streamDraft && (
@@ -792,6 +820,14 @@ export default function App() {
                 ? '该会话已归档，恢复后可以继续对话'
                 : '让 Agent 修改页面，或检查虚拟工作台...（Enter 发送，Shift+Enter 换行）'
             }
+            model={settings.model}
+            models={settings.modelList.length > 0 ? settings.modelList : [settings.model]}
+            reasoningOptions={
+              reasoningOptionsForModel(settings.reasoningOptions, settings.model) ?? []
+            }
+            reasoningEffort={settings.reasoningEffort}
+            onModelChange={handleModelChange}
+            onReasoningChange={handleReasoningChange}
             onChange={setInputValue}
             onAttachmentsChange={setInputAttachments}
             onSend={() => void handleSend()}
@@ -901,6 +937,7 @@ export default function App() {
           permissions={previewPermissions}
           onClose={() => setSettingsOpen(false)}
           onSave={(next, nextPermissions) => void handleSettingsSave(next, nextPermissions)}
+          onModelsChange={handleModelsChange}
         />
       )}
 

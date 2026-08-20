@@ -40,6 +40,7 @@ export async function runUserTurn(options: RunTurnOptions): Promise<RunTurnResul
   let steps = 0
   let toolCallCount = 0
   const pendingDiagnostics: string[] = []
+  const changedFiles = new Set<string>()
   const emit = async (type: AgentEventRecord['type'], payload: unknown): Promise<void> => {
     const event: AgentEventRecord = {
       id: id('event'),
@@ -119,6 +120,7 @@ export async function runUserTurn(options: RunTurnOptions): Promise<RunTurnResul
           content: response.content,
           createdAt: Date.now(),
           toolCalls: response.toolCalls,
+          ...(response.thinking ? { thinking: response.thinking } : {}),
           status: 'final',
         }
         await repository.appendMessage(toolAssistant)
@@ -139,6 +141,7 @@ export async function runUserTurn(options: RunTurnOptions): Promise<RunTurnResul
           await repository.appendMessage(toolMessage)
           await emit('tool_result', { callId: call.id, name: call.function.name, result })
           if (result.changedPath) {
+            changedFiles.add(result.changedPath)
             await emit('workspace_mutation', { path: result.changedPath, tool: call.function.name })
             const nextFiles = await repository.listFiles(workspaceId)
             const artifact = buildPreview(nextFiles)
@@ -166,6 +169,8 @@ export async function runUserTurn(options: RunTurnOptions): Promise<RunTurnResul
         role: 'assistant',
         content: response.content.trim(),
         createdAt: Date.now(),
+        ...(response.thinking ? { thinking: response.thinking } : {}),
+        ...(changedFiles.size > 0 ? { changedFiles: [...changedFiles] } : {}),
         status: 'final',
       }
       await repository.appendMessage(assistantMessage)

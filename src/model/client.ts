@@ -6,6 +6,7 @@ import type {
   ToolCallRequest,
 } from '../types'
 import type { ModelToolDefinition } from '../tools/registry'
+import { reasoningOptionsForModel } from '../lib/reasoning'
 
 export interface RequestModelOptions {
   settings: AgentSettings
@@ -21,17 +22,27 @@ export async function requestModel(options: RequestModelOptions): Promise<ModelR
   if (!baseUrl) throw new Error('Model API base URL is empty')
   if (!settings.model.trim()) throw new Error('Model name is empty')
   const headers = buildRequestHeaders(settings, { streaming: true })
+  const body: Record<string, unknown> = {
+    model: settings.model.trim(),
+    messages,
+    tools,
+    tool_choice: 'auto',
+    temperature: 0.2,
+    stream: true,
+  }
+  if (settings.reasoningEffort !== 'off') {
+    const options = reasoningOptionsForModel(settings.reasoningOptions, settings.model)
+    const effectiveKey = options
+      ? (options.find((item) => item.key === settings.reasoningEffort)?.key ??
+        options[0]?.key ??
+        settings.reasoningEffort)
+      : settings.reasoningEffort
+    body.reasoning_effort = effectiveKey
+  }
   const response = await fetch(baseUrl + '/chat/completions', {
     method: 'POST',
     headers,
-    body: JSON.stringify({
-      model: settings.model.trim(),
-      messages,
-      tools,
-      tool_choice: 'auto',
-      temperature: 0.2,
-      stream: true,
-    }),
+    body: JSON.stringify(body),
     signal,
   })
   if (!response.ok || !response.body) {
@@ -143,6 +154,7 @@ async function parseSseStream(
   const decoder = new TextDecoder()
   let buffer = ''
   let content = ''
+  let thinking = ''
   let finishReason: string | undefined
   let usage: ModelResponse['usage']
   let lastError: string | null = null
@@ -161,7 +173,7 @@ async function parseSseStream(
     if (!json || typeof json !== 'object') return
     const chunk = json as {
       choices?: {
-        delta?: { content?: unknown; tool_calls?: unknown[] }
+        delta?: { content?: unknown; reasoning_content?: unknown; tool_calls?: unknown[] }
         finish_reason?: string
       }[]
       usage?: ModelResponse['usage']
@@ -181,6 +193,8 @@ async function parseSseStream(
       content += delta.content
       onDelta?.(delta.content)
     }
+    if (typeof delta.reasoning_content === 'string' && delta.reasoning_content.length > 0)
+      thinking += delta.reasoning_content
     if (Array.isArray(delta.tool_calls)) {
       for (const part of delta.tool_calls) {
         mergeToolCallPart(toolCalls, part)
@@ -204,7 +218,7 @@ async function parseSseStream(
 
   if (signal?.aborted) throw new DOMException('Request aborted', 'AbortError')
   if (lastError !== null) throw new Error(lastError)
-  return { content, toolCalls: [...toolCalls.values()], finishReason, usage }
+  return { content, toolCalls: [...toolCalls.values()], thinking, finishReason, usage }
 }
 
 function mergeToolCallPart(toolCalls: Map<string, ToolCallRequest>, part: unknown): void {

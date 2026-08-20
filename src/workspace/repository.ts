@@ -18,6 +18,10 @@ const DEFAULT_SETTINGS: AgentSettings = {
   model: 'deepseek-chat',
   customHeaders: '',
   supportsMultimodal: false,
+  reasoningEffort: 'off',
+  reasoningOptions: '',
+  modelList: [],
+  showThinking: false,
 }
 
 export class RevisionConflictError extends Error {

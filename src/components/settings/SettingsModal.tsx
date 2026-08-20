@@ -8,6 +8,7 @@ export interface SettingsModalProps {
   permissions: PreviewPermissions
   onClose: () => void
   onSave: (value: AgentSettings, permissions: PreviewPermissions) => void
+  onModelsChange?: (models: string[]) => void
 }
 
 const PERMISSION_ITEMS: { key: keyof PreviewPermissions; label: string; hint: string }[] = [
@@ -31,7 +32,13 @@ const PERMISSION_ITEMS: { key: keyof PreviewPermissions; label: string; hint: st
   { key: 'allowEval', label: '动态代码', hint: 'eval / new Function' },
 ]
 
-export function SettingsModal({ value, permissions, onClose, onSave }: SettingsModalProps) {
+export function SettingsModal({
+  value,
+  permissions,
+  onClose,
+  onSave,
+  onModelsChange,
+}: SettingsModalProps) {
   const [draft, setDraft] = useState(value)
   const [permDraft, setPermDraft] = useState(permissions)
   const [testState, setTestState] = useState<'idle' | 'testing' | 'done'>('idle')
@@ -39,7 +46,7 @@ export function SettingsModal({ value, permissions, onClose, onSave }: SettingsM
   const [testOk, setTestOk] = useState(false)
   const [listState, setListState] = useState<'idle' | 'loading' | 'done'>('idle')
   const [listMessage, setListMessage] = useState('')
-  const [models, setModels] = useState<string[]>([])
+  const [models, setModels] = useState<string[]>(value.modelList)
   const [headerError, setHeaderError] = useState('')
   const patch = (next: Partial<AgentSettings>) => setDraft((current) => ({ ...current, ...next }))
   const togglePermission = (key: keyof PreviewPermissions) =>
@@ -63,14 +70,15 @@ export function SettingsModal({ value, permissions, onClose, onSave }: SettingsM
   const handleFetchModels = async () => {
     setListState('loading')
     setListMessage('')
-    setModels([])
     try {
       const fetched = await fetchModelList(draft)
       if (fetched.length === 0) {
         setListMessage('接口已响应，但未返回任何模型。')
       } else {
-        setModels(fetched)
-        if (!fetched.includes(draft.model)) patch({ model: fetched[0] })
+        const merged = Array.from(new Set([...models, ...fetched])).sort()
+        setModels(merged)
+        onModelsChange?.(merged)
+        if (!merged.includes(draft.model)) patch({ model: fetched[0] })
         setListMessage(`找到 ${fetched.length} 个模型。`)
       }
     } catch (cause) {
@@ -170,7 +178,40 @@ export function SettingsModal({ value, permissions, onClose, onSave }: SettingsM
                 <option key={item} value={item} />
               ))}
             </datalist>
+            <small className="field-hint">
+              模型列表缓存，可手动增删（每行一个）。拉取模型会合并接口返回的列表。
+            </small>
+            <textarea
+              className="model-list-editor"
+              value={models.join('\n')}
+              onChange={(event) => {
+                const next = event.target.value
+                  .split('\n')
+                  .map((item) => item.trim())
+                  .filter(Boolean)
+                setModels(next)
+                onModelsChange?.(next)
+              }}
+              rows={4}
+              placeholder={'deepseek-chat\ndeepseek-reasoner\nclaude-sonnet-4-5'}
+            />
             {listMessage && <span className="test-message">{listMessage}</span>}
+          </label>
+          <label className="field-label">
+            思考强度选项
+            <small className="field-hint">
+              按模型定义思考强度键值，每行一条规则。格式：模型匹配词 | 键:名称,键:名称。
+              不匹配任何规则时使用默认低/中/高。例如：deepseek|low:低,medium:中,high:高,max:最大。
+            </small>
+            <textarea
+              className="model-list-editor"
+              value={draft.reasoningOptions}
+              onChange={(event) => patch({ reasoningOptions: event.target.value })}
+              rows={4}
+              placeholder={
+                'deepseek|low:低,medium:中,high:高,max:最大\no3|low:低,medium:中,high:高,xhigh:超高\nclaude|low:低,medium:中,high:高,ultra:极致'
+              }
+            />
           </label>
           <div className="test-row">
             <button
@@ -204,6 +245,19 @@ export function SettingsModal({ value, permissions, onClose, onSave }: SettingsM
               <span>
                 <strong>支持多模态</strong>
                 <small>图片与附件</small>
+              </span>
+            </label>
+            <label
+              className={'setting-toggle multimodal-toggle' + (draft.showThinking ? ' is-on' : '')}
+            >
+              <input
+                type="checkbox"
+                checked={draft.showThinking}
+                onChange={(event) => patch({ showThinking: event.target.checked })}
+              />
+              <span>
+                <strong>显示思考内容</strong>
+                <small>reasoning_content 思考过程</small>
               </span>
             </label>
           </div>

@@ -1,6 +1,7 @@
-import { FilePlus2, Send, Square, Wrench, X } from 'lucide-react'
+import { FilePlus2, Send, Square, X } from 'lucide-react'
 import type { ChangeEvent, ClipboardEvent } from 'react'
 import type { ChatAttachment } from '../../types'
+import type { ReasoningOption } from '../../lib/reasoning'
 
 export interface ComposerProps {
   value: string
@@ -9,6 +10,12 @@ export interface ComposerProps {
   placeholder?: string
   multimodal?: boolean
   attachments: ChatAttachment[]
+  model: string
+  models: string[]
+  reasoningOptions: ReasoningOption[]
+  reasoningEffort: string
+  onModelChange: (model: string) => void
+  onReasoningChange: (key: string) => void
   onChange: (value: string) => void
   onAttachmentsChange: (attachments: ChatAttachment[]) => void
   onSend: () => void
@@ -22,6 +29,12 @@ export function Composer({
   placeholder,
   multimodal = false,
   attachments,
+  model,
+  models,
+  reasoningOptions,
+  reasoningEffort,
+  onModelChange,
+  onReasoningChange,
   onChange,
   onAttachmentsChange,
   onSend,
@@ -86,6 +99,17 @@ export function Composer({
       }}
     >
       <div className="composer-shell">
+        <div className="composer-select-row">
+          <ModelSelects
+            model={model}
+            models={models}
+            reasoningOptions={reasoningOptions}
+            reasoningEffort={reasoningEffort}
+            disabled={disabled}
+            onModelChange={onModelChange}
+            onReasoningChange={onReasoningChange}
+          />
+        </div>
         <textarea
           value={value}
           onChange={(event) => onChange(event.target.value)}
@@ -131,9 +155,15 @@ export function Composer({
                 <input type="file" multiple onChange={handleFileChange} disabled={disabled} />
               </label>
             )}
-            <span className="composer-hint">
-              <Wrench size={13} /> 工具只在本工作台内运行
-            </span>
+            <ModelSelects
+              model={model}
+              models={models}
+              reasoningOptions={reasoningOptions}
+              reasoningEffort={reasoningEffort}
+              disabled={disabled}
+              onModelChange={onModelChange}
+              onReasoningChange={onReasoningChange}
+            />
           </div>
           {running ? (
             <button
@@ -157,5 +187,57 @@ export function Composer({
         </div>
       </div>
     </form>
+  )
+}
+
+function ModelSelects({
+  model,
+  models,
+  reasoningOptions,
+  reasoningEffort,
+  disabled,
+  onModelChange,
+  onReasoningChange,
+}: {
+  model: string
+  models: string[]
+  reasoningOptions: ReasoningOption[]
+  reasoningEffort: string
+  disabled: boolean
+  onModelChange: (model: string) => void
+  onReasoningChange: (key: string) => void
+}) {
+  return (
+    <>
+      <select
+        className="composer-select composer-model-select"
+        value={model}
+        disabled={disabled}
+        title="选择模型"
+        onChange={(event) => onModelChange(event.target.value)}
+      >
+        {models.map((item) => (
+          <option key={item} value={item}>
+            {item}
+          </option>
+        ))}
+      </select>
+      {reasoningOptions.length > 0 && (
+        <select
+          className="composer-select composer-reasoning-select"
+          value={reasoningEffort}
+          disabled={disabled}
+          title="思考强度"
+          onChange={(event) => onReasoningChange(event.target.value)}
+        >
+          <option value="off">思考：关闭</option>
+          {reasoningOptions.map((item) => (
+            <option key={item.key} value={item.key}>
+              思考：{item.label}
+            </option>
+          ))}
+        </select>
+      )}
+    </>
   )
 }
