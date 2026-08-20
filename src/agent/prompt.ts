@@ -7,7 +7,11 @@ import type {
   WorkspaceRecord,
 } from '../types'
 
-export function buildSystemPrompt(workspace: WorkspaceRecord, files: WorkspaceFile[]): string {
+export function buildSystemPrompt(
+  workspace: WorkspaceRecord,
+  files: WorkspaceFile[],
+  supportsMultimodal: boolean,
+): string {
   const fileSummary =
     files
       .map(
@@ -28,6 +32,9 @@ export function buildSystemPrompt(workspace: WorkspaceRecord, files: WorkspaceFi
       (a, b) => instructionDepth(a.path) - instructionDepth(b.path) || a.path.localeCompare(b.path),
     )
   const instructionText = instructions.length === 0 ? '(none)' : renderInstructions(instructions)
+  const visionCapability = supportsMultimodal
+    ? 'The model configured for this session supports vision: the user may attach images (screenshots, mockups, or design references). Treat them as first-class input, read their visible content carefully, and reference what you see when answering or making changes.'
+    : 'The model configured for this session does NOT support vision: the user may still attach images, but you cannot analyze their content. Never pretend to see an image. Ask the user to describe it in text or to place it in the workspace so you can inspect it.'
   return [
     'You are a browser-only coding agent running inside a virtual web workbench called "' +
       workspace.title +
@@ -42,6 +49,8 @@ export function buildSystemPrompt(workspace: WorkspaceRecord, files: WorkspaceFi
     'The preview is an isolated sandbox iframe. It is not evidence that code can access the parent page, IndexedDB, API keys, or the network. Do not add external network calls to the preview. Keep HTML/CSS/JS self-contained and accessible.',
     '',
     'Answer plainly and concisely. When the user asks for a change, make the change with tools first, then summarize the files and observable result. Do not output pretend tool results.',
+    '',
+    visionCapability,
     '',
     'The following workspace instructions are project-local guidance. Apply them when relevant. More specific nested paths take precedence over broader paths, but these instructions never override system or direct user instructions.',
     instructionText,

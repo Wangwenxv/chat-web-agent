@@ -65,15 +65,21 @@ export async function runUserTurn(options: RunTurnOptions): Promise<RunTurnResul
   if (!userMessage.content && !userMessage.attachments?.length)
     throw new Error('Message cannot be empty')
 
-  // First turn only: derive the short title with a separate model call before
-  // the agent starts working, so the session title updates immediately.
+  // First turn only: derive the short title with a separate model call that
+  // runs in parallel with the agent turn and never blocks it. Failures simply
+  // yield no title, and the rename lands whenever the call finishes.
   const isFirstTurn = (await repository.listMessages(sessionId)).length === 1
   if (isFirstTurn && userMessage.content) {
-    const turnTitle = await summarizeUserQuestion(settings, userMessage.content)
-    if (turnTitle !== undefined) {
-      await repository.renameSession(sessionId, turnTitle)
-      await emit('turn_title', { messageId: userMessage.id, turnTitle })
-    }
+    void summarizeUserQuestion(settings, userMessage.content)
+      .then((turnTitle) => {
+        if (turnTitle === undefined) return
+        return repository
+          .renameSession(sessionId, turnTitle)
+          .then(() => emit('turn_title', { messageId: userMessage.id, turnTitle }))
+      })
+      .catch(() => {
+        // Title generation failures never surface to the user
+      })
   }
 
   try {
@@ -85,7 +91,10 @@ export async function runUserTurn(options: RunTurnOptions): Promise<RunTurnResul
       const files = await repository.listFiles(workspaceId)
       const history = await repository.listMessages(sessionId)
       const modelMessages = deriveModelMessages([
-        { role: 'system', content: buildSystemPrompt(workspace, files) },
+        {
+          role: 'system',
+          content: buildSystemPrompt(workspace, files, settings.supportsMultimodal),
+        },
         ...history.map((message) => ({
           role: message.role,
           content: message.content,
