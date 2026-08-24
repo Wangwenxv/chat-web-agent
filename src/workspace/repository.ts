@@ -17,6 +17,9 @@ const DEFAULT_SETTINGS: AgentSettings = {
   apiKey: '',
   model: 'deepseek-chat',
   customHeaders: '',
+  // 通用联网搜索默认关闭，确保老用户继续使用原有的纯前端开发者搜索链路。
+  generalWebSearchEnabled: false,
+  generalWebSearchBaseUrl: '',
   supportsMultimodal: false,
   reasoningEffort: 'off',
   reasoningOptions: '',

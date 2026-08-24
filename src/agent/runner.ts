@@ -8,7 +8,7 @@ import type {
 import { beforePublish } from './policies'
 import { buildSystemPrompt, deriveModelMessages } from './prompt'
 import { requestModel } from '../model/client'
-import { executeTool, toolDefinitions } from '../tools/registry'
+import { executeTool, getToolDefinitions } from '../tools/registry'
 import { buildPreview } from '../preview/build'
 import { summarizeUserQuestion } from './title'
 import { BrowserRepository } from '../workspace/repository'
@@ -94,7 +94,7 @@ export async function runUserTurn(options: RunTurnOptions): Promise<RunTurnResul
       const modelMessages = deriveModelMessages([
         {
           role: 'system',
-          content: buildSystemPrompt(workspace, files, settings.supportsMultimodal),
+          content: buildSystemPrompt(workspace, files, settings),
         },
         ...history.map((message) => ({
           role: message.role,
@@ -108,7 +108,8 @@ export async function runUserTurn(options: RunTurnOptions): Promise<RunTurnResul
       const response = await requestModel({
         settings,
         messages: modelMessages,
-        tools: toolDefinitions,
+        // 工具清单随联网搜索开关变化，避免关闭功能后模型仍看到不可用的通用搜索链路。
+        tools: getToolDefinitions(settings),
         signal,
         onDelta,
       })

@@ -1,0 +1,8 @@
+# 搜索抓取与 HTML 解析依赖。
+requests>=2.32,<3
+beautifulsoup4>=4.13,<5
+lxml>=5,<7
+
+# HTTP 服务与 ASGI 运行时依赖。
+fastapi>=0.115,<1
+uvicorn>=0.34,<1

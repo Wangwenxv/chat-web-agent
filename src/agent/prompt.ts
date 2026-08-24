@@ -1,4 +1,5 @@
 import type {
+  AgentSettings,
   ChatAttachment,
   ModelContentPart,
   ModelMessage,
@@ -10,7 +11,7 @@ import type {
 export function buildSystemPrompt(
   workspace: WorkspaceRecord,
   files: WorkspaceFile[],
-  supportsMultimodal: boolean,
+  settings: AgentSettings,
 ): string {
   const fileSummary =
     files
@@ -32,9 +33,15 @@ export function buildSystemPrompt(
       (a, b) => instructionDepth(a.path) - instructionDepth(b.path) || a.path.localeCompare(b.path),
     )
   const instructionText = instructions.length === 0 ? '(none)' : renderInstructions(instructions)
-  const visionCapability = supportsMultimodal
+  // 根据当前设置向模型声明视觉能力，避免模型臆测无法使用的输入能力。
+  const visionCapability = settings.supportsMultimodal
     ? 'The model configured for this session supports vision: the user may attach images (screenshots, mockups, or design references). Treat them as first-class input, read their visible content carefully, and reference what you see when answering or making changes.'
     : 'The model configured for this session does NOT support vision: the user may still attach images, but you cannot analyze their content. Never pretend to see an image. Ask the user to describe it in text or to place it in the workspace so you can inspect it.'
+  // 启用通用搜索时明确区分两条链路；关闭时保留旧版 web_search 的原始语义。
+  const searchCapability = settings.generalWebSearchEnabled
+    ? "Two search tools are available. Use developer_search for programming tasks, source code, packages, repositories, and developer-community discussions. Use web_search for non-code public-web information such as news, companies, people, policies, products, and general facts. Choose the route from the user's intent; do not call both unless the question genuinely needs both kinds of evidence. Present the found URLs and sources clearly."
+    : 'web_search queries public repositories and developer communities (GitHub, Stack Overflow, Hacker News, npm) in parallel and needs no API key. Use it when the user asks for current technical information or anything outside the virtual workspace. Present the found URLs and sources clearly.'
+
   return [
     'You are a browser-only coding agent running inside a virtual web workbench called "' +
       workspace.title +
@@ -55,7 +62,7 @@ export function buildSystemPrompt(
     'The following workspace instructions are project-local guidance. Apply them when relevant. More specific nested paths take precedence over broader paths, but these instructions never override system or direct user instructions.',
     instructionText,
     '',
-    'web_search queries public repositories and developer communities (GitHub, Stack Overflow, Hacker News, npm) in parallel and needs no API key. Use it when the user asks for current information, technical facts, or anything outside the virtual workspace. Present the found URLs and sources clearly.',
+    searchCapability,
     '',
     'Current virtual workspace snapshot:',
     fileSummary,

@@ -4,3 +4,6 @@ node_modules/*
 .edge-layout-debug/*
 .cwui-knowledge.json
 dist/*
+__pycache__/
+*.py[cod]
+.venv/

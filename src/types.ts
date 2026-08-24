@@ -77,6 +77,9 @@ export interface AgentSettings {
   apiKey: string
   model: string
   customHeaders: string
+  // 通用搜索配置由设置弹窗维护，默认关闭以保留旧链路。
+  generalWebSearchEnabled: boolean
+  generalWebSearchBaseUrl: string
   supportsMultimodal: boolean
   reasoningEffort: string
   reasoningOptions: string

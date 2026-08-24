@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { ListTree, LoaderCircle, PlugZap, X } from 'lucide-react'
 import type { AgentSettings, PreviewPermissions } from '../../types'
 import { fetchModelList, parseRequestHeaders, testModelConnection } from '../../model/client'
+import { normalizeGeneralSearchBaseUrl } from '../../search/providers'
 
 export interface SettingsModalProps {
   value: AgentSettings
@@ -48,6 +49,7 @@ export function SettingsModal({
   const [listMessage, setListMessage] = useState('')
   const [models, setModels] = useState<string[]>(value.modelList)
   const [headerError, setHeaderError] = useState('')
+  const [searchUrlError, setSearchUrlError] = useState('')
   const patch = (next: Partial<AgentSettings>) => setDraft((current) => ({ ...current, ...next }))
   const togglePermission = (key: keyof PreviewPermissions) =>
     setPermDraft((current) => ({ ...current, [key]: !current[key] }))
@@ -213,6 +215,52 @@ export function SettingsModal({
               }
             />
           </label>
+          <div className="settings-divider" />
+          {/* 通用搜索单独成组，让频繁变化的 Quick Tunnel 地址可以随时替换。 */}
+          <div className="permission-heading">
+            <div>
+              <span className="eyebrow">联网</span>
+              <h3>搜索路由</h3>
+            </div>
+            <span className="field-hint">
+              开启后由 Agent 在通用网页搜索与原有开发者搜索之间自行选择。
+            </span>
+          </div>
+          <label
+            className={
+              'setting-toggle search-toggle' + (draft.generalWebSearchEnabled ? ' is-on' : '')
+            }
+          >
+            <input
+              type="checkbox"
+              checked={draft.generalWebSearchEnabled}
+              onChange={(event) => {
+                patch({ generalWebSearchEnabled: event.target.checked })
+                setSearchUrlError('')
+              }}
+            />
+            <span>
+              <strong>启用通用联网搜索</strong>
+              <small>非代码内容走百度/Bing；代码与开发者资料继续走现有公开 API。</small>
+            </span>
+          </label>
+          {draft.generalWebSearchEnabled && (
+            <label className="field-label">
+              Cloudflare Tunnel 域名
+              <small className="field-hint">
+                可填写完整地址或 trycloudflare.com 域名，保存时会自动补全 HTTPS。
+              </small>
+              <input
+                value={draft.generalWebSearchBaseUrl}
+                onChange={(event) => {
+                  patch({ generalWebSearchBaseUrl: event.target.value })
+                  setSearchUrlError('')
+                }}
+                placeholder="https://example.trycloudflare.com"
+              />
+            </label>
+          )}
+          {searchUrlError && <div className="header-error">{searchUrlError}</div>}
           <div className="test-row">
             <button
               className="secondary-button"
@@ -297,9 +345,20 @@ export function SettingsModal({
             onClick={() => {
               try {
                 parseRequestHeaders(draft.customHeaders)
-                onSave(draft, permDraft)
+                // 开启通用搜索时先校验并规范化域名，避免错误地址进入 Agent 回合。
+                const generalWebSearchBaseUrl = draft.generalWebSearchEnabled
+                  ? normalizeGeneralSearchBaseUrl(draft.generalWebSearchBaseUrl)
+                  : draft.generalWebSearchBaseUrl.trim()
+                setHeaderError('')
+                setSearchUrlError('')
+                onSave({ ...draft, generalWebSearchBaseUrl }, permDraft)
               } catch (cause) {
-                setHeaderError(cause instanceof Error ? cause.message : String(cause))
+                const message = cause instanceof Error ? cause.message : String(cause)
+                if (draft.generalWebSearchEnabled && message.includes('通用搜索')) {
+                  setSearchUrlError(message)
+                } else {
+                  setHeaderError(message)
+                }
               }
             }}
           >

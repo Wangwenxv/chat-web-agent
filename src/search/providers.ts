@@ -6,10 +6,16 @@ export interface SearchProvider {
 }
 
 const REQUEST_TIMEOUT_MS = 12000
+const GENERAL_SEARCH_TIMEOUT_MS = 35000
 
-function fetchJson(url: string, signal?: AbortSignal): Promise<unknown> {
+// 为所有搜索请求统一处理超时和外层取消信号，防止失效来源拖住整个 Agent 回合。
+function fetchJson(
+  url: string,
+  signal?: AbortSignal,
+  timeoutMs = REQUEST_TIMEOUT_MS,
+): Promise<unknown> {
   const controller = new AbortController()
-  const timer = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS)
+  const timer = setTimeout(() => controller.abort(), timeoutMs)
   const onOuterAbort = () => controller.abort()
   signal?.addEventListener('abort', onOuterAbort, { once: true })
   return fetch(url, { signal: controller.signal, headers: { Accept: 'application/json' } })
@@ -157,7 +163,8 @@ export interface MultiSourceSearchResult {
   failures: string[]
 }
 
-export async function searchWeb(
+// 原有纯前端链路专门查询开发者站点，保持关闭通用搜索时的历史行为。
+export async function searchDeveloperWeb(
   query: string,
   signal?: AbortSignal,
 ): Promise<MultiSourceSearchResult> {
@@ -191,5 +198,63 @@ export async function searchWeb(
       results.push(item)
     }
   }
+  return { results: results.slice(0, 20), sources, failures }
+}
+
+// 将用户频繁变化的 Quick Tunnel 域名规范化为 HTTPS 基地址。
+export function normalizeGeneralSearchBaseUrl(value: string): string {
+  const raw = value.trim()
+  if (!raw) throw new Error('通用搜索服务地址为空，请先在 Agent 设置中填写 Cloudflare 域名。')
+  const withProtocol = /^https?:\/\//i.test(raw) ? raw : 'https://' + raw
+  let url: URL
+  try {
+    url = new URL(withProtocol)
+  } catch {
+    throw new Error('通用搜索服务地址格式无效，请填写 Cloudflare Tunnel 域名。')
+  }
+  if (url.protocol !== 'https:' && url.protocol !== 'http:')
+    throw new Error('通用搜索服务地址只支持 HTTP 或 HTTPS。')
+  if (url.username || url.password) throw new Error('通用搜索服务地址不能包含用户名或密码。')
+  return url.href.replace(/\/+$/, '')
+}
+
+// 通用搜索链路通过 Python 服务访问百度和 Bing，浏览器只接收结构化 JSON。
+export async function searchGeneralWeb(
+  baseUrl: string,
+  query: string,
+  signal?: AbortSignal,
+): Promise<MultiSourceSearchResult> {
+  const endpoint = new URL(normalizeGeneralSearchBaseUrl(baseUrl) + '/api/search')
+  endpoint.searchParams.set('q', query)
+  endpoint.searchParams.set('engine', 'all')
+  endpoint.searchParams.set('num', '8')
+  const data = (await fetchJson(endpoint.href, signal, GENERAL_SEARCH_TIMEOUT_MS)) as {
+    results?: unknown
+    sources?: unknown
+    failures?: unknown
+  }
+  const results = Array.isArray(data.results)
+    ? data.results
+        .map((item): SearchResultItem | null => {
+          if (!item || typeof item !== 'object') return null
+          const value = item as Record<string, unknown>
+          const title = typeof value.title === 'string' ? value.title : ''
+          const url = typeof value.url === 'string' ? value.url : ''
+          if (!title || !url) return null
+          return {
+            title,
+            url,
+            snippet: typeof value.snippet === 'string' ? value.snippet : '',
+            source: typeof value.source === 'string' ? value.source : undefined,
+          }
+        })
+        .filter((item): item is SearchResultItem => item !== null)
+    : []
+  const sources = Array.isArray(data.sources)
+    ? data.sources.filter((item): item is string => typeof item === 'string')
+    : []
+  const failures = Array.isArray(data.failures)
+    ? data.failures.filter((item): item is string => typeof item === 'string')
+    : []
   return { results: results.slice(0, 20), sources, failures }
 }

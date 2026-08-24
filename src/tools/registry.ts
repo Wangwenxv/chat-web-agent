@@ -1,6 +1,6 @@
 import type { AgentSettings, ToolExecutionResult, ToolCallRequest } from '../types'
 import { buildLineDiff } from '../lib/diff'
-import { searchWeb } from '../search/providers'
+import { searchDeveloperWeb, searchGeneralWeb } from '../search/providers'
 import { BrowserRepository } from '../workspace/repository'
 
 export interface ToolContext {
@@ -21,7 +21,7 @@ export interface ModelToolDefinition {
 
 const stringProperty = (description: string) => ({ type: 'string', description })
 
-export const toolDefinitions: ModelToolDefinition[] = [
+const workspaceToolDefinitions: ModelToolDefinition[] = [
   {
     type: 'function',
     function: {
@@ -144,12 +144,15 @@ export const toolDefinitions: ModelToolDefinition[] = [
       },
     },
   },
-  {
+]
+
+// 搜索工具共用同一参数结构，只通过名称和描述向模型区分适用场景。
+function searchTool(name: string, description: string): ModelToolDefinition {
+  return {
     type: 'function',
     function: {
-      name: 'web_search',
-      description:
-        'Search public web information across GitHub, Stack Overflow, Hacker News, and npm without any API key. Returns titles, URLs, and summaries. Multiple sources are queried in parallel; failed sources are reported in the result.',
+      name,
+      description,
       parameters: {
         type: 'object',
         required: ['query'],
@@ -157,8 +160,29 @@ export const toolDefinitions: ModelToolDefinition[] = [
         additionalProperties: false,
       },
     },
-  },
-]
+  }
+}
+
+const legacyWebSearchTool = searchTool(
+  'web_search',
+  'Search developer-oriented public information across GitHub, Stack Overflow, Hacker News, and npm without an API key. Use for programming, repositories, packages, and technical discussions.',
+)
+const developerSearchTool = searchTool(
+  'developer_search',
+  'Search GitHub, Stack Overflow, Hacker News, and npm in parallel. Use this route for source code, programming questions, packages, repositories, and developer-community discussions; do not use it for general news or non-code facts.',
+)
+const generalWebSearchTool = searchTool(
+  'web_search',
+  'Search the general public web through Baidu and Bing. Use this route for non-code information such as current news, companies, people, products, policies, and general facts; do not use it for package or repository discovery.',
+)
+
+// 关闭开关时只暴露旧链路；开启后同时暴露名称和职责明确的两条搜索链路。
+export function getToolDefinitions(settings: AgentSettings): ModelToolDefinition[] {
+  const searchTools = settings.generalWebSearchEnabled
+    ? [developerSearchTool, generalWebSearchTool]
+    : [legacyWebSearchTool]
+  return [...workspaceToolDefinitions, ...searchTools]
+}
 
 export async function executeTool(
   call: ToolCallRequest,
@@ -192,6 +216,8 @@ export async function executeTool(
         return await workspaceStats(context)
       case 'workspace_diff':
         return await workspaceDiff(args, context)
+      case 'developer_search':
+        return await developerSearch(args, context)
       case 'web_search':
         return await webSearch(args, context)
       default:
@@ -367,8 +393,14 @@ async function webSearch(
   context: ToolContext,
 ): Promise<ToolExecutionResult> {
   const query = requiredString(args.query, 'query')
+  // 开关关闭时继续走原有浏览器来源，确保默认行为和部署方式完全兼容。
+  if (!context.settings.generalWebSearchEnabled) return developerSearch(args, context)
   try {
-    const { results, sources, failures } = await searchWeb(query, context.signal)
+    const { results, sources, failures } = await searchGeneralWeb(
+      context.settings.generalWebSearchBaseUrl,
+      query,
+      context.signal,
+    )
     if (results.length === 0) {
       const detail = failures.length > 0 ? '\nFailures:\n' + failures.join('\n') : ''
       return failure('Web search returned no results for: ' + query + detail)
@@ -376,6 +408,26 @@ async function webSearch(
     return success(JSON.stringify({ query, sources, failures, results }, null, 2), results)
   } catch (error) {
     return failure('Web search failed: ' + (error instanceof Error ? error.message : String(error)))
+  }
+}
+
+// 开发者搜索始终使用无需自建服务的四个公开 API，供双链路模式独立选择。
+async function developerSearch(
+  args: Record<string, unknown>,
+  context: ToolContext,
+): Promise<ToolExecutionResult> {
+  const query = requiredString(args.query, 'query')
+  try {
+    const { results, sources, failures } = await searchDeveloperWeb(query, context.signal)
+    if (results.length === 0) {
+      const detail = failures.length > 0 ? '\nFailures:\n' + failures.join('\n') : ''
+      return failure('Developer search returned no results for: ' + query + detail)
+    }
+    return success(JSON.stringify({ query, sources, failures, results }, null, 2), results)
+  } catch (error) {
+    return failure(
+      'Developer search failed: ' + (error instanceof Error ? error.message : String(error)),
+    )
   }
 }
 

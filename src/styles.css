@@ -1935,6 +1935,47 @@ textarea:focus-visible {
   line-height: 1.4;
 }
 
+/* 通用搜索开关复用现有设置卡片的视觉语义，并保持单列以容纳说明文字。 */
+.search-toggle {
+  display: flex;
+  align-items: flex-start;
+  gap: 9px;
+  padding: 10px;
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  background: var(--surface-soft);
+  cursor: pointer;
+  margin-bottom:10px;
+}
+
+.search-toggle.is-on {
+  border-color: var(--line-strong);
+  background: var(--blue-soft);
+}
+
+.search-toggle input {
+  width: 14px;
+  height: 14px;
+  margin: 2px 0 0;
+  accent-color: var(--blue);
+}
+
+.search-toggle span {
+  display: grid;
+  gap: 3px;
+}
+
+.search-toggle strong {
+  color: var(--text);
+  font-size: 12px;
+}
+
+.search-toggle small {
+  color: var(--text-faint);
+  font-size: 11px;
+  line-height: 1.45;
+}
+
 .test-row {
   display: flex;
   align-items: flex-start;
