@@ -460,6 +460,7 @@ textarea:focus-visible {
   background: transparent;
   cursor: pointer;
   text-align: left;
+  font-size:12px;
 }
 
 .workspace-option span {
