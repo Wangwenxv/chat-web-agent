@@ -595,7 +595,12 @@ export default function App() {
   )
 
   const handleModelsChange = useCallback((models: string[]) => {
-    setSettings((current) => (current ? { ...current, modelList: models } : current))
+    setSettings((current) => {
+      if (!current) return current
+      const next = { ...current, modelList: models }
+      void repository.saveSettings(next)
+      return next
+    })
   }, [])
 
   const handleModelChange = useCallback((model: string) => {
