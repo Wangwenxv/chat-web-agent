@@ -8,25 +8,13 @@ import type {
   WorkspaceRecord,
 } from '../types'
 
+// 系统提示词必须保持逐字节稳定：随文件编辑变化的文件快照要放到
+// buildWorkspaceSnapshotMessage 生成的尾部消息里，否则会截断提示词缓存前缀。
 export function buildSystemPrompt(
   workspace: WorkspaceRecord,
   files: WorkspaceFile[],
   settings: AgentSettings,
 ): string {
-  const fileSummary =
-    files
-      .map(
-        (file) =>
-          file.path +
-          ' (rev ' +
-          file.revision +
-          ', ' +
-          file.content.length +
-          ' chars' +
-          (file.previewable ? ', previewable' : '') +
-          ')',
-      )
-      .join('\n') || '(empty)'
   const instructions = files
     .filter((file) => isInstructionFile(file.path))
     .sort(
@@ -64,8 +52,32 @@ export function buildSystemPrompt(
     '',
     searchCapability,
     '',
+    'The current virtual workspace snapshot is provided in a separate <workspace_snapshot> message at the end of the conversation. It is refreshed on every step; always trust the latest one.',
+  ].join('\n')
+}
+
+// 工作区快照随每次文件编辑（rev、字符数）变化，若嵌在系统提示词里会截断缓存前缀，
+// 因此作为尾部独立 user 消息注入，位于全部历史消息之后，每步重建。
+export function buildWorkspaceSnapshotMessage(files: WorkspaceFile[]): string {
+  const fileSummary =
+    files
+      .map(
+        (file) =>
+          file.path +
+          ' (rev ' +
+          file.revision +
+          ', ' +
+          file.content.length +
+          ' chars' +
+          (file.previewable ? ', previewable' : '') +
+          ')',
+      )
+      .join('\n') || '(empty)'
+  return [
+    '<workspace_snapshot>',
     'Current virtual workspace snapshot:',
     fileSummary,
+    '</workspace_snapshot>',
   ].join('\n')
 }
 

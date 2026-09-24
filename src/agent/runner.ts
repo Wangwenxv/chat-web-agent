@@ -4,10 +4,11 @@ import type {
   ChatAttachment,
   ChatMessageRecord,
   ToolCallRequest,
+  TurnUsage,
 } from '../types'
 import { beforePublish } from './policies'
-import { buildSystemPrompt, deriveModelMessages } from './prompt'
-import { requestModel } from '../model/client'
+import { buildSystemPrompt, buildWorkspaceSnapshotMessage, deriveModelMessages } from './prompt'
+import { accumulateTurnUsage, requestModel } from '../model/client'
 import { executeTool, getToolDefinitions } from '../tools/registry'
 import { buildPreview } from '../preview/build'
 import { summarizeUserQuestion } from './title'
@@ -84,6 +85,8 @@ export async function runUserTurn(options: RunTurnOptions): Promise<RunTurnResul
   }
 
   try {
+    const turnUsage: TurnUsage = { promptTokens: 0, completionTokens: 0, cachedTokens: 0 }
+    let sawUsage = false
     while (true) {
       if (signal?.aborted) throw new DOMException('Turn cancelled', 'AbortError')
       steps += 1
@@ -91,6 +94,8 @@ export async function runUserTurn(options: RunTurnOptions): Promise<RunTurnResul
       if (!workspace) throw new Error('Workspace no longer exists')
       const files = await repository.listFiles(workspaceId)
       const history = await repository.listMessages(sessionId)
+      // 消息布局对提示词缓存至关重要：tools + 静态 system + 逐条追加的历史消息
+      // 构成稳定前缀；随文件编辑变化的快照只能放在最后的独立消息里。
       const modelMessages = deriveModelMessages([
         {
           role: 'system',
@@ -104,15 +109,25 @@ export async function runUserTurn(options: RunTurnOptions): Promise<RunTurnResul
           toolCalls: message.toolCalls,
           attachments: message.attachments,
         })),
+        {
+          role: 'user',
+          content: buildWorkspaceSnapshotMessage(files),
+        },
       ])
       const response = await requestModel({
         settings,
         messages: modelMessages,
+        // 缓存断点打在静态前缀的两端：system 与最后一条历史消息（快照消息之前）。
+        cacheBreakpoints: [0, Math.max(0, modelMessages.length - 2)],
         // 工具清单随联网搜索开关变化，避免关闭功能后模型仍看到不可用的通用搜索链路。
         tools: getToolDefinitions(settings),
         signal,
         onDelta,
       })
+      if (response.usage) {
+        accumulateTurnUsage(turnUsage, response.usage)
+        sawUsage = true
+      }
       if (response.toolCalls.length > 0) {
         const toolAssistant: ChatMessageRecord = {
           id: id('message'),
@@ -172,6 +187,7 @@ export async function runUserTurn(options: RunTurnOptions): Promise<RunTurnResul
         createdAt: Date.now(),
         ...(response.thinking ? { thinking: response.thinking } : {}),
         ...(changedFiles.size > 0 ? { changedFiles: [...changedFiles] } : {}),
+        ...(sawUsage ? { usage: turnUsage } : {}),
         status: 'final',
       }
       await repository.appendMessage(assistantMessage)
@@ -185,6 +201,7 @@ export async function runUserTurn(options: RunTurnOptions): Promise<RunTurnResul
         toolCalls: toolCallCount,
         segmented: true,
         segments: check.segments,
+        ...(sawUsage ? { usage: turnUsage } : {}),
       })
       return { assistantMessage, toolCalls: toolCallCount, steps }
     }

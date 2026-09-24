@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { ListTree, LoaderCircle, PlugZap, X } from 'lucide-react'
-import type { AgentSettings, PreviewPermissions } from '../../types'
+import type { AgentSettings, PreviewPermissions, PromptCacheMode } from '../../types'
 import { fetchModelList, parseRequestHeaders, testModelConnection } from '../../model/client'
 import { normalizeGeneralSearchBaseUrl } from '../../search/providers'
 
@@ -214,6 +214,25 @@ export function SettingsModal({
                 'deepseek|low:低,medium:中,high:高,max:最大\no3|low:低,medium:中,high:高,xhigh:超高\nclaude|low:低,medium:中,high:高,ultra:极致'
               }
             />
+          </label>
+          <label className="field-label">
+            提示词缓存
+            <select
+              className="model-picker"
+              value={draft.promptCacheMode}
+              onChange={(event) =>
+                patch({ promptCacheMode: event.target.value as PromptCacheMode })
+              }
+            >
+              <option value="auto">自动适配（推荐）</option>
+              <option value="on">强制开启缓存断点</option>
+              <option value="off">关闭</option>
+            </select>
+            <small className="field-hint">
+              自动适配：DeepSeek / OpenAI 由服务端自动缓存（请求前缀已保持稳定），模型名含 claude
+              时自动附加 cache_control 断点；强制模式会对所有请求附加断点，仅在网关确认支持
+              Anthropic 缓存时开启。最终回答下方会显示 prompt / 缓存命中 / 输出 tokens。
+            </small>
           </label>
           <div className="settings-divider" />
           {/* 通用搜索单独成组，让频繁变化的 Quick Tunnel 地址可以随时替换。 */}

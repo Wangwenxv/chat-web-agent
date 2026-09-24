@@ -840,6 +840,14 @@ textarea:focus-visible {
   padding-right: 10px;
 }
 
+.msg-usage {
+  padding: 0 6px;
+  color: var(--text-faint);
+  font-size: 11px;
+  line-height: 24px;
+  white-space: nowrap;
+}
+
 @media (hover: hover) {
   [data-time-hover-root] .msg-clock {
     opacity: 0;

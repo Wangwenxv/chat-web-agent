@@ -31,6 +31,13 @@ export interface SessionRecord {
 
 export type MessageRole = 'system' | 'user' | 'assistant' | 'tool'
 
+// 整回合累计的 token 用量；cachedTokens 归一化了各家服务商的缓存命中字段。
+export interface TurnUsage {
+  promptTokens: number
+  completionTokens: number
+  cachedTokens: number
+}
+
 export interface ChatMessageRecord {
   id: string
   sessionId: string
@@ -43,6 +50,7 @@ export interface ChatMessageRecord {
   toolCalls?: ToolCallRequest[]
   thinking?: string
   changedFiles?: string[]
+  usage?: TurnUsage
   status?: 'streaming' | 'final' | 'error'
 }
 
@@ -72,6 +80,10 @@ export interface AgentEventRecord {
   payload: unknown
 }
 
+// 提示词缓存模式：auto 按服务商自动适配（自动缓存 + claude 模型附加 cache_control），
+// on 强制附加 cache_control 断点，off 完全关闭。
+export type PromptCacheMode = 'auto' | 'on' | 'off'
+
 export interface AgentSettings {
   apiBaseUrl: string
   apiKey: string
@@ -85,6 +97,7 @@ export interface AgentSettings {
   reasoningOptions: string
   modelList: string[]
   showThinking: boolean
+  promptCacheMode: PromptCacheMode
 }
 
 export interface PreviewPermissions {
@@ -176,13 +189,26 @@ export type ModelChunk =
   | { kind: 'done'; finishReason?: string; usage?: ModelResponse['usage'] }
   | { kind: 'error'; message: string }
 
+// 覆盖主流服务商的 usage 形态：DeepSeek 的 prompt_cache_hit/miss_tokens、
+// OpenAI 的 prompt_tokens_details.cached_tokens、Anthropic 的 cache_read/creation_input_tokens。
+export interface ModelUsage {
+  prompt_tokens?: number
+  completion_tokens?: number
+  total_tokens?: number
+  prompt_cache_hit_tokens?: number
+  prompt_cache_miss_tokens?: number
+  cache_read_input_tokens?: number
+  cache_creation_input_tokens?: number
+  prompt_tokens_details?: { cached_tokens?: number }
+}
+
 export interface ModelResponse {
   id?: string
   content: string
   toolCalls: ToolCallRequest[]
   thinking?: string
   finishReason?: string
-  usage?: { prompt_tokens?: number; completion_tokens?: number; total_tokens?: number }
+  usage?: ModelUsage
 }
 
 export interface ConnectionTestResult {

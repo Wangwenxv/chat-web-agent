@@ -3,7 +3,9 @@ import type {
   ConnectionTestResult,
   ModelMessage,
   ModelResponse,
+  ModelUsage,
   ToolCallRequest,
+  TurnUsage,
 } from '../types'
 import type { ModelToolDefinition } from '../tools/registry'
 import { reasoningOptionsForModel } from '../lib/reasoning'
@@ -14,6 +16,8 @@ export interface RequestModelOptions {
   tools: ModelToolDefinition[]
   signal?: AbortSignal
   onDelta?: (text: string) => void
+  // 需要打缓存断点的消息下标（Anthropic cache_control），仅在后端支持时生效。
+  cacheBreakpoints?: number[]
 }
 
 export async function requestModel(options: RequestModelOptions): Promise<ModelResponse> {
@@ -22,13 +26,18 @@ export async function requestModel(options: RequestModelOptions): Promise<ModelR
   if (!baseUrl) throw new Error('Model API base URL is empty')
   if (!settings.model.trim()) throw new Error('Model name is empty')
   const headers = buildRequestHeaders(settings, { streaming: true })
+  const useCacheControl = resolveCacheControl(settings)
   const body: Record<string, unknown> = {
     model: settings.model.trim(),
-    messages,
-    tools,
+    messages: useCacheControl
+      ? applyCacheBreakpoints(messages, options.cacheBreakpoints ?? [])
+      : messages,
+    tools: useCacheControl ? applyToolCacheControl(tools) : tools,
     tool_choice: 'auto',
     temperature: 0.2,
     stream: true,
+    // 让 OpenAI 兼容链路在流式响应末尾回传 usage，否则看不到缓存命中统计。
+    stream_options: { include_usage: true },
   }
   if (settings.reasoningEffort !== 'off') {
     const options = reasoningOptionsForModel(settings.reasoningOptions, settings.model)
@@ -56,6 +65,64 @@ export async function requestModel(options: RequestModelOptions): Promise<ModelR
     throw new Error(readApiError(data, response.status))
   }
   return parseSseStream(response.body, signal, onDelta)
+}
+
+// 各家服务商的提示词缓存开启方式不同：DeepSeek/OpenAI 在服务端自动缓存，
+// 只要请求前缀稳定即可；Anthropic（含透传 Claude 的中转）必须在消息体和
+// 工具上显式打 cache_control 断点。auto 模式按模型名猜测，on 强制开启。
+function resolveCacheControl(settings: AgentSettings): boolean {
+  const mode = settings.promptCacheMode ?? 'auto'
+  if (mode === 'off') return false
+  if (mode === 'on') return true
+  return /claude|anthropic/i.test(settings.model)
+}
+
+// 在指定消息上打 cache_control 断点：字符串内容需转为 content parts 形式。
+// 断点之后的片段无法复用缓存，所以调用方应把断点打在稳定前缀的末端。
+function applyCacheBreakpoints(messages: ModelMessage[], breakpoints: number[]): unknown[] {
+  const marks = new Set(breakpoints)
+  return messages.map((message, index) => {
+    if (!marks.has(index) || message.content === null) return message
+    if (typeof message.content === 'string') {
+      return {
+        ...message,
+        content: [{ type: 'text', text: message.content, cache_control: { type: 'ephemeral' } }],
+      }
+    }
+    if (message.content.length === 0) return message
+    return {
+      ...message,
+      content: message.content.map((part, partIndex) =>
+        partIndex === (message.content as unknown[]).length - 1
+          ? { ...part, cache_control: { type: 'ephemeral' } }
+          : part,
+      ),
+    }
+  })
+}
+
+// Anthropic 的缓存前缀从 tools 开始，给最后一个工具打断点可缓存整个工具块。
+function applyToolCacheControl(tools: ModelToolDefinition[]): unknown[] {
+  if (tools.length === 0) return tools
+  return tools.map((tool, index) =>
+    index === tools.length - 1 ? { ...tool, cache_control: { type: 'ephemeral' } } : tool,
+  )
+}
+
+// 归一化三家服务商的缓存命中字段：DeepSeek、OpenAI、Anthropic。
+export function cachedTokensOf(usage: ModelUsage): number {
+  return (
+    usage.prompt_cache_hit_tokens ??
+    usage.prompt_tokens_details?.cached_tokens ??
+    usage.cache_read_input_tokens ??
+    0
+  )
+}
+
+export function accumulateTurnUsage(target: TurnUsage, usage: ModelUsage): void {
+  target.promptTokens += usage.prompt_tokens ?? 0
+  target.completionTokens += usage.completion_tokens ?? 0
+  target.cachedTokens += cachedTokensOf(usage)
 }
 
 const FORBIDDEN_HEADERS = new Set([

@@ -25,6 +25,8 @@ const DEFAULT_SETTINGS: AgentSettings = {
   reasoningOptions: '',
   modelList: [],
   showThinking: false,
+  // 默认自动适配：DeepSeek/OpenAI 走服务端自动缓存，claude 模型自动打 cache_control 断点。
+  promptCacheMode: 'auto',
 }
 
 export class RevisionConflictError extends Error {

@@ -5,6 +5,7 @@ import type {
   ChatMessageRecord,
   ToolCallRequest,
   ToolExecutionResult,
+  TurnUsage,
 } from '../../types'
 import { getToolCallSummary } from '../../agent/runner'
 import { MarkdownRenderer } from './MarkdownRenderer'
@@ -57,7 +58,7 @@ export function MessageView({
           </div>
         </div>
       ) : null}
-      <MessageChrome text={message.content} time={message.createdAt} />
+      <MessageChrome text={message.content} time={message.createdAt} usage={message.usage} />
     </div>
   )
 }
@@ -108,10 +109,12 @@ function MessageChrome({
   text,
   time,
   clock = 'end',
+  usage,
 }: {
   text: string
   time?: number
   clock?: 'start' | 'end'
+  usage?: TurnUsage
 }) {
   const [copied, setCopied] = useState(false)
   const timerRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined)
@@ -135,6 +138,11 @@ function MessageChrome({
   return (
     <div className="msg-chrome">
       {clock === 'start' && clockEl}
+      {usage && usage.promptTokens > 0 && (
+        <span className="msg-usage" title="整回合累计：prompt / 缓存命中 / 输出 tokens">
+          {formatTurnUsage(usage)}
+        </span>
+      )}
       <button
         className="msg-action"
         title="复制"
@@ -146,6 +154,16 @@ function MessageChrome({
       {clock === 'end' && clockEl}
     </div>
   )
+}
+
+function formatTurnUsage(usage: TurnUsage): string {
+  const cached = usage.cachedTokens > 0 ? ` · 缓存 ${formatTokenCount(usage.cachedTokens)}` : ''
+  return `${formatTokenCount(usage.promptTokens)}${cached} · 输出 ${formatTokenCount(usage.completionTokens)}`
+}
+
+function formatTokenCount(value: number): string {
+  if (value >= 1000) return (value / 1000).toFixed(1).replace(/\.0$/, '') + 'k'
+  return String(value)
 }
 
 function formatMessageClock(time: number): string {
